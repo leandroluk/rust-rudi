@@ -37,18 +37,29 @@ pub(crate) enum Entry {
     },
 }
 
+/// Slot de `bind_many` — mesma forma de `Entry::Singleton` (builder + cache), mas
+/// vive numa lista à parte (`Inner::many`), nunca sobrescrita por outro `bind_many`.
+pub(crate) struct ManySlot {
+    factory: BoxedFactory,
+    cell: Arc<OnceCell<AnyArc>>,
+}
+
 // SPEC_DEVIATION: design.md especifica tokio::sync::RwLock; usamos std::sync::RwLock aqui.
 // Reason: a tabela de entradas só é acessada de forma síncrona (lookup/insert), nunca
 // segurada através de um .await — só o OnceCell do singleton precisa ser async-aware.
 // std::sync::RwLock evita overhead de lock async onde não é necessário.
 pub(crate) struct Inner {
     pub(crate) entries: RwLock<HashMap<Key, Entry>>,
+    // Storage separado de `entries` — `bind_many` nunca sobrescreve/é sobrescrito por
+    // `bind`/`bind_with` na mesma chave, mesmo pra Impls que aparecem nos dois.
+    pub(crate) many: RwLock<HashMap<Key, Vec<ManySlot>>>,
 }
 
 impl Inner {
     fn new() -> Self {
         Self {
             entries: RwLock::new(HashMap::new()),
+            many: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -176,6 +187,58 @@ impl Container {
             let built = Arc::new(Impl::build(c).await?);
             Ok(Impl::into_port(built))
         });
+    }
+
+    /// Acumula `Impl: Injectable<Port = Port>` na lista de implementações de `Port`,
+    /// sem sobrescrever `bind_many`s anteriores pra mesma porta (diferente de `bind`,
+    /// que é "última vence"). Ver [`Container::resolve_all`].
+    pub fn bind_many<Impl, Port>(&self)
+    where
+        Impl: Injectable<Port = Port>,
+        Port: Send + Sync + 'static + ?Sized,
+    {
+        let factory = wrap_builder::<Arc<Port>, _, _, Impl::Error>(|c| async move {
+            let built = Arc::new(Impl::build(c).await?);
+            Ok(Impl::into_port(built))
+        });
+        let key = Key::new(TypeId::of::<Arc<Port>>(), None);
+        let mut many = self.inner.many.write().unwrap();
+        many.entry(key).or_default().push(ManySlot {
+            factory,
+            cell: Arc::new(OnceCell::new()),
+        });
+    }
+
+    /// Resolve todas as implementações acumuladas via [`Container::bind_many`] pra
+    /// `Port`, na ordem em que foram registradas. Vazio (não é erro) se nenhuma
+    /// `bind_many` rodou pra essa porta ainda.
+    pub async fn resolve_all<T: Send + Sync + 'static>(&self) -> Result<Vec<Arc<T>>, RudiError> {
+        let type_name = std::any::type_name::<T>();
+        let key = Key::new(TypeId::of::<T>(), None);
+
+        let slots: Vec<(BoxedFactory, Arc<OnceCell<AnyArc>>)> = {
+            let many = self.inner.many.read().unwrap();
+            match many.get(&key) {
+                Some(slots) => slots
+                    .iter()
+                    .map(|slot| (slot.factory.clone(), slot.cell.clone()))
+                    .collect(),
+                None => Vec::new(),
+            }
+        };
+
+        let mut result = Vec::with_capacity(slots.len());
+        for (factory, cell) in slots {
+            let any = cell
+                .get_or_try_init(|| (factory.as_ref())(self.clone()))
+                .await?
+                .clone();
+            let value = any
+                .downcast::<T>()
+                .map_err(|_| RudiError::DowncastFailed { type_name })?;
+            result.push(value);
+        }
+        Ok(result)
     }
 
     /// Resolve `T`, sem nome.
