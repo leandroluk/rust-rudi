@@ -1,0 +1,34 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: test (gate before publish)
+        run: cargo test --workspace
+
+      # rudi-macros first — rudi depends on it, crates.io rejects a package whose
+      # path dependency hasn't been published yet.
+      #
+      # NOTE: both crates.io/Cargo.toml need `license`/`license-file` set before this
+      # step succeeds — see "License" in README.md (not yet declared for this repo).
+      - name: publish rudi-macros
+        run: cargo publish -p rudi-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: wait for crates.io index
+        run: sleep 30
+
+      - name: publish rudi
+        run: cargo publish -p rudi --token ${{ secrets.CARGO_REGISTRY_TOKEN }}

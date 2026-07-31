@@ -2,6 +2,9 @@
 
 Type-safe dependency injection for Rust, with guaranteed async resolution and macros that eliminate manual wiring boilerplate.
 
+[![ci](https://github.com/leandroluk/rudi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leandroluk/rudi/actions/workflows/ci.yml)
+[![GitHub](https://img.shields.io/badge/GitHub-leandroluk%2Frudi-181717?logo=github)](https://github.com/leandroluk/rudi)
+
 ## Why this exists
 
 Codebases following the hexagonal / ports-and-adapters pattern do the same wiring by hand over and over: config gets read, an adapter gets built from it, the adapter gets registered against its port, repeated for every provider (`LoggerPort` → slog, `DatabasePort` → postgres or mongodb, depending on env). That wiring usually ends up scattered across a growing `main.rs` or a chain of hand-written `init()` calls.
