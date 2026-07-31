@@ -35,14 +35,12 @@ examples/metacode/
 
 Same shape as the original hypothesis: a port per capability, a provider per implementation, a `mod.rs` at each level that decides which provider wins.
 
-## 2 documented deviations from `METACODE.md`
+## 1 documented deviation from `METACODE.md`
 
-Both come from language restrictions the original hypothesis document didn't (couldn't) anticipate — not stylistic choices:
-
-**1. `#[injectable]` decorates the `impl` block, not the `build` fn.**
+Comes from a language restriction the original hypothesis document didn't (couldn't) anticipate — not a stylistic choice: `#[injectable]` decorates the `impl` block, not the `build` fn.
 
 ```rust
-// METACODE.md's hypothesis (doesn't compile as written):
+// METACODE.md's original hypothesis (doesn't compile as written):
 impl LoggerSlogAdapter {
     #[injectable]
     pub fn build(c: &Container) -> Self { ... }
@@ -51,21 +49,19 @@ impl LoggerSlogAdapter {
 // What actually works:
 #[injectable(dyn LoggerPort)]
 impl LoggerSlogAdapter {
-    async fn build(c: &Container) -> Self { ... }
+    fn build(#[inject] config: Arc<LoggerSlogConfig>) -> Self { ... }
 }
 ```
 
-A proc-macro attribute only ever sees the exact item it decorates — attached to `build` alone, it has no way to learn the enclosing `impl`'s concrete type name. See [Macros](../guides/macros.md#injectable).
+A proc-macro attribute only ever sees the exact item it decorates — attached to `build` alone, it has no way to learn the enclosing `impl`'s concrete type name, and there's no way to emit the required `impl Injectable for LoggerSlogAdapter` (a sibling top-level item) from inside another `impl` block's braces. See [Macros](../guides/macros.md#injectable).
 
-**2. Constructors resolving from the container are `async fn build`, not sync `fn build`.**
-
-`resolve()` is always `async` (see [Resolving](../guides/resolving.md)) — a synchronous `build` has nowhere to put the `.await` it needs to call `c.resolve::<LoggerSlogConfig>()`. This was a deliberate design decision from M1 (guaranteeing uniform support for constructors that need real I/O), made before this example was written, not a workaround improvised here.
+The `build` fn itself stays 100% synchronous — `#[inject]` on the `config` parameter resolves `LoggerSlogConfig` from the container automatically; all the `async`/`.await` machinery this needs lives inside the `Injectable::build` the macro generates alongside `build`, never in `build` itself.
 
 ## What each piece does
 
 - **`domain/port/`** — trait definitions only, no `rudi` dependency at all. Ports are pure domain code.
 - **`infra/logger/slog/config.rs`** — `LoggerSlogConfig`, registered as a plain instance (`register_instance`) in `init()`, not through `#[injectable]` — it has no custom construction logic of its own.
-- **`infra/logger/slog/adapter.rs`** — `LoggerSlogAdapter`, `#[injectable(dyn LoggerPort)]` on its `impl` block; `build` resolves `LoggerSlogConfig` from the container.
+- **`infra/logger/slog/adapter.rs`** — `LoggerSlogAdapter`, `#[injectable(dyn LoggerPort)]` on its `impl` block; `build(#[inject] config: Arc<LoggerSlogConfig>)` resolves the config automatically, no manual `c.resolve()` call.
 - **`infra/logger/slog/mod.rs`** — `init(c, level)` registers the config, then `c.bind::<LoggerSlogAdapter, dyn LoggerPort>()`.
 - **`infra/logger/mod.rs`** — `init(c, provider)` picks which sub-provider's `init` to call (only `"slog"` exists here, but the shape matches `infra/database/mod.rs`, which has 2).
 - **`infra/database/{postgres,mongodb}/`** — mirror the logger structure exactly, 1 provider each, both binding against the same `dyn DatabasePort`.

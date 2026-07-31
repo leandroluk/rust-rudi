@@ -40,7 +40,7 @@ struct Greeter;
 
 #[injectable]
 impl Greeter {
-    fn build(_c: &Container) -> Self {
+    fn build(#[container] _c: &Container) -> Self {
         Greeter
     }
 }
@@ -71,6 +71,7 @@ See [Documentation](#documentation) below for the full API (registration modes, 
 - [x] M2 — Macros (`Injectable` trait, `Container::bind`/`register_singleton_injectable`, `#[injectable]`, `#[inject]`, `#[derive(Injectable)]`)
 - [x] M3 — Isolated testing (`rudi::testing::with_container`)
 - [x] M4 — Multi-bind (`bind_many`/`resolve_all`, for healthcheck-style "resolve every implementation" ports)
+- [x] M5 — Constructor injection (`#[inject]`/`#[inject_all]` parameter markers inside `#[injectable]`)
 
 All v1 milestones are complete. See `.specs/project/ROADMAP.md` for the full breakdown.
 
@@ -169,20 +170,22 @@ for p in pingables {
 
 #### `#[injectable]`
 
-Decorates the **whole `impl` block** (not the standalone `build` fn — a proc-macro attribute has no visibility into the surrounding scope of the item it decorates, so it has to sit one level up). Generates `impl Injectable` from `fn build(c: &Container) -> Self`.
+Decorates the **whole `impl` block**, not a single fn inside it — emitting `impl Injectable for Tipo` (a sibling top-level item) is only possible from a macro invoked at that level; an attribute on an inner fn can only expand into more inner fns.
+
+Rust has no language-level "constructor" — `#[injectable]` finds it by **shape**: any name, no `self`, every parameter marked `#[inject]`/`#[inject_all]`/`#[container]`. The constructor itself stays 100% synchronous and testable without `.await` — all the async lives inside the generated `Injectable::build`.
 
 ```rust
-use rudi::{injectable, Container};
+use rudi::injectable;
+use std::sync::Arc;
 
 struct LoggerSlogAdapter {
-    config: LoggerSlogConfig,
+    config: Arc<LoggerSlogConfig>,
 }
 
 #[injectable(dyn LoggerPort)] // port is optional — without it, resolves by concrete type
 impl LoggerSlogAdapter {
-    async fn build(c: &Container) -> Self {
-        let config = c.resolve::<LoggerSlogConfig>().await.unwrap();
-        Self { config: (*config).clone() }
+    fn build(#[inject] config: Arc<LoggerSlogConfig>) -> Self {
+        Self { config }
     }
 }
 
@@ -192,7 +195,13 @@ impl LoggerPort for LoggerSlogAdapter {
 }
 ```
 
-Supports all 4 combinations of `build`'s signature: sync or `async`, returning `Self` (infallible) or `Result<Self, E>`.
+| Marker | Parameter type | Resolves via |
+| --- | --- | --- |
+| `#[inject]` | `Arc<T>` | `resolve::<T>()` (flattens the double-`Arc` automatically when `T` is `dyn Trait`) |
+| `#[inject_all]` | `Vec<Arc<T>>` | `resolve_all` |
+| `#[container]` | `&Container`/`Container` | the ambient `Container`, no lookup |
+
+See [Macros](https://leandroluk.github.io/rust-rudi/#/guides/macros) for the full breakdown (mixing markers, `Result<Self, E>` constructors, compile-time validation).
 
 #### `#[inject]`
 
@@ -251,7 +260,7 @@ async fn my_test() {
 ## Known Limitations
 
 - **Circular dependencies aren't detected** — a builder resolving a type whose own builder resolves it back becomes a runtime deadlock. Documented, not handled in v1.
-- **`#[injectable]`'s `build` parameter doesn't support import aliases** — it must be `Container`/`&Container` literally. Different from `#[inject]`, which uses a marker attribute and therefore doesn't have this limitation.
+- **`resolve::<Arc<dyn Port>>()` actually returns `Arc<Arc<dyn Port>>`** — a consequence of "resolve always returns `Arc<T>`" applied even when `T` is itself `Arc<dyn Port>` (from a `bind`/`bind_with` call). Transparent via auto-deref in practice (`resolved.info()` works the same); `#[inject]`/`#[inject_all]` inside `#[injectable]` and `#[derive(Injectable)]` all flatten it automatically, so this only matters if you call `resolve` directly on a bound port yourself.
 
 A full runnable example (logger + database with 2 providers, reproducing [`METACODE.md`](METACODE.md)'s hypothesis literally with real macros) lives at [`crates/rudi/examples/metacode/`](crates/rudi/examples/metacode/):
 

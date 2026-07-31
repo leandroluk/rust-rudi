@@ -14,45 +14,67 @@ pub trait Injectable: Sized + Send + Sync + 'static {
 
 ## `#[injectable]`
 
-Decorates the **whole `impl` block**, not the standalone `build` fn — this is a hard restriction, not a stylistic choice: a proc-macro attribute only receives the exact item it's attached to, with zero visibility into the surrounding scope. Attached directly to `fn build` (like `METACODE.md`'s original hypothesis shows), the macro has no way to know the concrete type's name. Moving 1 level up gives it the whole `syn::ItemImpl`, `self_ty` included:
+Decorates the **whole `impl` block**, not a single fn inside it — this is a hard restriction, not a stylistic choice: emitting `impl Injectable for Tipo` (a sibling top-level item) is only possible from a macro invoked at that level. An attribute macro applied to an *inner* fn can only ever expand into more inner fns — Rust doesn't allow an `impl` block nested inside another `impl` block, so there's no way to emit `impl Injectable for Tipo` from inside `impl Tipo { ... }`.
+
+Rust has no language-level "constructor" — no keyword, no trait, nothing the compiler treats specially, `new` is pure convention (even in the standard library). So `#[injectable]` finds the constructor by **shape**, not by name: it scans every fn in the `impl` block with no `self` receiver, and picks the one where **every parameter is marked** `#[inject]`, `#[inject_all]`, or `#[container]`:
 
 ```rust
 struct LoggerSlogAdapter {
-    config: LoggerSlogConfig,
+    config: Arc<LoggerSlogConfig>,
 }
 
 #[injectable(dyn LoggerPort)] // port argument is optional
 impl LoggerSlogAdapter {
-    async fn build(c: &Container) -> Self {
-        let config = c.resolve::<LoggerSlogConfig>().await.unwrap();
-        Self { config: (*config).clone() }
+    // any name works — `build`, `new`, whatever. Stays 100% synchronous and
+    // untouched: callable directly in a test (`LoggerSlogAdapter::build(cfg)`,
+    // no `.await`). All the async lives inside the `Injectable::build` this
+    // macro generates alongside it.
+    fn build(#[inject] config: Arc<LoggerSlogConfig>) -> Self {
+        Self { config }
     }
 
     // any other inherent methods pass through untouched
 }
 ```
 
-`build` supports all 4 combinations:
-
-| | `-> Self` | `-> Result<Self, E>` |
-| --- | --- | --- |
-| **sync `fn`** | wraps in `Ok(...)` internally | passed through as-is |
-| **`async fn`** | `.await`s, then wraps in `Ok(...)` | `.await`s, passed through as-is |
-
 - **No port argument** (`#[injectable]`) → `type Port = Self` — usable with [`register_singleton_injectable`](registering.md), resolved by concrete type.
 - **`#[injectable(dyn PortTrait)]`** → `type Port = dyn PortTrait` — usable with [`bind`](binding.md#bind-macro-driven-recommended), resolved through the trait.
 
+### Parameter markers
+
+| Marker | Parameter type | Resolves via |
+| --- | --- | --- |
+| `#[inject]` | `Arc<T>` (`T` concrete or `dyn Trait`) | `resolve::<T>()` — or `resolve::<Arc<T>>()` + flatten when `T` is `dyn Trait` (`resolve`'s implicit `T: Sized` bound rules out resolving an unsized trait object directly) |
+| `#[inject_all]` | `Vec<Arc<T>>` | [`resolve_all`](binding.md#resolving-every-implementation-of-a-port), same flattening rule per item |
+| `#[container]` | `&Container`/`Container` | hands over the `Container` already in scope — never goes through `resolve` (there's no "resolve the container from itself" lookup) |
+
+```rust
+struct HealthcheckUsecase {
+    pingables: Vec<Arc<dyn PingablePort>>,
+}
+
+#[injectable]
+impl HealthcheckUsecase {
+    fn new(#[inject_all] pingables: Vec<Arc<dyn PingablePort>>) -> Self {
+        Self { pingables }
+    }
+}
+```
+
+Constructors can mix markers freely (`fn build(#[inject] config: Arc<Config>, #[container] c: &Container) -> Self`). Return type follows the same rule as before: bare `Self` or `Result<Self, E>` — bare `Self` defaults `Injectable::Error` to `RudiError` (not `Infallible`), since the generated body always has at least 1 fallible `resolve`/`resolve_all` call to propagate.
+
 ### Compile-time validation
 
-- The `impl` block must have exactly 1 fn named `build`.
-- `build` must have exactly 1 parameter, `&Container`/`Container` written literally (no alias — see [Known limitations](README.md#known-limitations)).
+- 0 fns match the constructor shape → `compile_error!` ("no candidates").
+- 2+ fns match → `compile_error!`, naming every candidate ("ambiguous — pick one shape per `impl` block").
+- A parameter marked `#[inject]`/`#[inject_all]` with the wrong shape (not `Arc<T>`/`Vec<Arc<T>>`) → `compile_error!` pointing at that parameter.
 - The `impl` can't be a trait impl (`impl Trait for Type`) — only `impl Type { ... }`.
 
-Any violation fails at `cargo build` time with a `compile_error!`, never a runtime surprise.
+Any violation fails at `cargo build` time, never a runtime surprise.
 
 ## `#[inject]`
 
-Removes a parameter marked `#[container]` from the public signature, injecting `rudi::container()` as the first statement of the body:
+A **different** macro from the `#[inject]` *marker* used inside `#[injectable]` constructors above — same word, 2 separate mechanisms (one's a `#[proc_macro_attribute]` applied to a whole fn; the other is an inert attribute `#[injectable]` consumes on a single parameter). This one decorates any free fn or method: it removes a parameter marked `#[container]` from the public signature, injecting `rudi::container()` as the first statement of the body:
 
 ```rust
 use rudi::{inject, Container};
@@ -67,7 +89,7 @@ fn main() {
 }
 ```
 
-Unlike `#[injectable]`, this **does** support import aliases:
+Both this `#[container]` marker and `#[injectable]`'s param markers rely on the same trick — matching an attribute, not the parameter's type name — so both support import aliases:
 
 ```rust
 use rudi::Container as C;
@@ -77,8 +99,6 @@ async fn setup(#[container] c: &C) {
     c.register_instance(MyConfig::default());
 }
 ```
-
-That's the whole reason `#[inject]` uses a marker attribute instead of matching on the parameter's type name — `#[container]` doesn't care what the type is called, only that it's the one parameter meant to be injected. `#[injectable]`'s `build` parameter can't use this trick (see [design.md](https://github.com/leandroluk/rust-rudi/blob/main/.specs/features/di-macros/design.md) for why the 2 macros ended up with different constraints here).
 
 ### Compile-time validation
 

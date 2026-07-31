@@ -35,7 +35,7 @@ struct Greeter;
 
 #[injectable]
 impl Greeter {
-    fn build(_c: &Container) -> Self {
+    fn build(#[container] _c: &Container) -> Self {
         Greeter
     }
 }
@@ -78,7 +78,6 @@ Always check with a `match`/`?`, never string-compare the error message.
 ## Known limitations
 
 - **Circular dependencies aren't detected.** A builder that (directly or transitively) resolves its own type again deadlocks at runtime, inside the `OnceCell` guarding the singleton's initialization. Not handled in v1 — avoid designing a dependency graph with cycles.
-- **`#[injectable]`'s `build` parameter doesn't support import aliases.** It must be `Container`/`&Container` written literally — the macro matches on the last path segment of the parameter's type, since proc-macros don't have type-checker information. Different from `#[inject]`, whose `#[container]` marker attribute sidesteps this entirely (see [Macros](guides/macros.md#inject)).
 - **`resolve::<Arc<dyn Port>>()` actually returns `Arc<Arc<dyn Port>>`.** A consequence of the "resolve always returns `Arc<T>`" rule applied uniformly even when `T` is itself `Arc<dyn Port>` (from a `bind`/`bind_with` call). Transparent in practice via Rust's auto-deref on method calls (`resolved.info()` works exactly the same), but worth knowing if you're storing the value or pattern-matching on its type.
 
 ## About the project
