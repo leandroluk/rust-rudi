@@ -45,3 +45,31 @@ Whichever `init` ran last is the one `resolve::<Arc<dyn DatabasePort>>()` return
 ## Multiple ports per implementation
 
 `#[injectable(dyn Port)]` only takes 1 port per `impl` block. An adapter implementing 2 traits needs `bind_with` for the 2nd one — the macro-driven `bind` only covers the port declared in the attribute.
+
+## Resolving every implementation of a port
+
+`bind`/`bind_with`'s "last wins" rule fits a single-selection port (1 database provider chosen by env). It doesn't fit the opposite, equally common shape: a healthcheck-style port where you want **every** registered implementation, not just the last one — "resolve everything that knows how to `ping()`, ping each of them."
+
+`bind_many`/`resolve_all` cover that case, with storage completely separate from `bind`/`bind_with` — the same `Impl` can be registered through both, for different ports, with zero interference:
+
+```rust
+trait PingablePort: Send + Sync {
+    async fn ping(&self) -> Result<(), Error>;
+}
+
+// each healthcheckable adapter accumulates instead of overwriting
+c.bind_many::<DatabasePostgresAdapter, dyn PingablePort>();
+c.bind_many::<LoggerSlogAdapter, dyn PingablePort>();
+
+// resolves every accumulated implementation, in registration order
+let pingables = c.resolve_all::<Arc<dyn PingablePort>>().await?;
+for p in pingables {
+    p.ping().await?;
+}
+```
+
+- `resolve_all` with no prior `bind_many` for that port returns `Ok(vec![])` — empty is not an error, unlike `resolve`.
+- Each accumulated implementation is cached individually (double-init safe under concurrency), the same guarantee `register_singleton`/`bind` give a single slot.
+- There's no `bind_many_named`/`resolve_all_named` yet — not needed by any concrete use case so far; add it if one shows up.
+
+See the full [`PingablePort` example](https://github.com/leandroluk/rudi/blob/main/METACODE.md#exemplo-healthcheck-via-multi-bind-pingableport) in `METACODE.md` for the complete wiring, healthcheck fn included.

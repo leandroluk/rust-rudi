@@ -1,7 +1,7 @@
 # Roadmap
 
-**Current Milestone:** v1 Complete
-**Status:** M1 Complete, M2 Complete, M3 Complete
+**Current Milestone:** v1 Complete (+ M4 pós-v1)
+**Status:** M1 Complete, M2 Complete, M3 Complete, M4 Complete
 
 ---
 
@@ -49,6 +49,21 @@
 ### Features
 
 **`rudi::testing::with_container`** - COMPLETE
+
+---
+
+## M4 — Multi-bind (pós-v1)
+
+**Goal:** Resolver todas as implementações de uma porta de uma vez (padrão healthcheck), sem afetar a semântica "última vence" de `bind`/`bind_with`.
+**Motivação:** exemplo `PingablePort` adicionado ao METACODE.md.
+
+### Features
+
+**`bind_many`/`resolve_all`** - COMPLETE
+
+- Storage separado (`Inner::many`) — nunca colide com `bind`/`bind_with` na mesma chave
+- `resolve_all` vazio não é erro (diferente de `resolve`)
+- Cada slot é cacheado individualmente (double-init safe, mesma garantia do singleton)
 
 ---
 

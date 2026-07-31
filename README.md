@@ -67,6 +67,7 @@ See [Documentation](#documentation) below for the full API (registration modes, 
 - [x] M1 — Core Container (`Container`, `rudi::container()`, `register_instance`/`register_transient`/`register_singleton` + named variants, `bind_with`, async `resolve`)
 - [x] M2 — Macros (`Injectable` trait, `Container::bind`/`register_singleton_injectable`, `#[injectable]`, `#[inject]`, `#[derive(Injectable)]`)
 - [x] M3 — Isolated testing (`rudi::testing::with_container`)
+- [x] M4 — Multi-bind (`bind_many`/`resolve_all`, for healthcheck-style "resolve every implementation" ports)
 
 All v1 milestones are complete. See `.specs/project/ROADMAP.md` for the full breakdown.
 
@@ -146,6 +147,20 @@ logger.info("Hello World!");
 ```
 
 If `bind` is called twice for the same port, the 2nd call wins — resolving by trait never reveals which concrete implementation is behind it.
+
+**Resolving every implementation of a port** (healthcheck-style — "give me everything that can `ping()`"), instead of just the last one:
+
+```rust
+c.bind_many::<DatabasePostgresAdapter, dyn PingablePort>();
+c.bind_many::<LoggerSlogAdapter, dyn PingablePort>();
+
+let pingables = c.resolve_all::<Arc<dyn PingablePort>>().await?; // Ok(vec![]) if none registered
+for p in pingables {
+    p.ping().await?;
+}
+```
+
+`bind_many`/`resolve_all` use storage completely separate from `bind`/`bind_with` — the same `Impl` can be registered through both, for different ports, without interference. See [Binding a port](docs/guides/binding.md#resolving-every-implementation-of-a-port) for the full guide.
 
 ### Macros
 
