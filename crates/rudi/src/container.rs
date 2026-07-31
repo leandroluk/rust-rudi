@@ -2,9 +2,9 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
-use tokio::sync::{OnceCell, RwLock};
+use tokio::sync::OnceCell;
 
 use crate::error::RudiError;
 
@@ -36,6 +36,10 @@ pub(crate) enum Entry {
     },
 }
 
+// SPEC_DEVIATION: design.md especifica tokio::sync::RwLock; usamos std::sync::RwLock aqui.
+// Reason: a tabela de entradas só é acessada de forma síncrona (lookup/insert), nunca
+// segurada através de um .await — só o OnceCell do singleton precisa ser async-aware.
+// std::sync::RwLock evita overhead de lock async onde não é necessário.
 pub(crate) struct Inner {
     pub(crate) entries: RwLock<HashMap<Key, Entry>>,
 }
@@ -59,6 +63,82 @@ impl Container {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Inner::new()),
+        }
+    }
+
+    fn insert_entry(&self, key: Key, entry: Entry) {
+        let mut entries = self.inner.entries.write().unwrap();
+        entries.insert(key, entry);
+    }
+
+    /// Registra um valor já construído, resolvível sem nome.
+    pub fn register_instance<T: Send + Sync + 'static>(&self, value: T) {
+        let key = Key::new(TypeId::of::<T>(), None);
+        self.insert_entry(key, Entry::Instance(Arc::new(value)));
+    }
+
+    /// Registra um valor já construído sob um nome, coexistindo com outras instâncias do mesmo tipo.
+    pub fn register_instance_named<T: Send + Sync + 'static>(&self, name: impl Into<String>, value: T) {
+        let name = name.into();
+        let key = Key::new(TypeId::of::<T>(), Some(&name));
+        self.insert_entry(key, Entry::Instance(Arc::new(value)));
+    }
+
+    /// Resolve `T`, sem nome.
+    pub async fn resolve<T: Send + Sync + 'static>(&self) -> Result<Arc<T>, RudiError> {
+        self.resolve_inner::<T>(None).await
+    }
+
+    /// Resolve `T` registrado sob `name`.
+    pub async fn resolve_named<T: Send + Sync + 'static>(&self, name: &str) -> Result<Arc<T>, RudiError> {
+        self.resolve_inner::<T>(Some(name)).await
+    }
+
+    async fn resolve_inner<T: Send + Sync + 'static>(&self, name: Option<&str>) -> Result<Arc<T>, RudiError> {
+        let type_name = std::any::type_name::<T>();
+        let any = self.resolve_any(TypeId::of::<T>(), name, type_name).await?;
+        any.downcast::<T>()
+            .map_err(|_| RudiError::DowncastFailed { type_name })
+    }
+
+    pub(crate) async fn resolve_any(
+        &self,
+        type_id: TypeId,
+        name: Option<&str>,
+        type_name: &'static str,
+    ) -> Result<AnyArc, RudiError> {
+        enum Action {
+            Instance(AnyArc),
+            Transient(BoxedFactory),
+            Singleton(BoxedFactory, Arc<OnceCell<AnyArc>>),
+        }
+
+        let key = Key::new(type_id, name);
+
+        let action = {
+            let entries = self.inner.entries.read().unwrap();
+            match entries.get(&key) {
+                Some(Entry::Instance(value)) => Action::Instance(value.clone()),
+                Some(Entry::Transient(factory)) => Action::Transient(factory.clone()),
+                Some(Entry::Singleton { factory, cell }) => {
+                    Action::Singleton(factory.clone(), cell.clone())
+                }
+                None => {
+                    return Err(RudiError::NotFound {
+                        type_name,
+                        name: name.map(str::to_string),
+                    });
+                }
+            }
+        };
+
+        match action {
+            Action::Instance(value) => Ok(value),
+            Action::Transient(factory) => (factory.as_ref())(self.clone()).await,
+            Action::Singleton(factory, cell) => cell
+                .get_or_try_init(|| (factory.as_ref())(self.clone()))
+                .await
+                .cloned(),
         }
     }
 }
