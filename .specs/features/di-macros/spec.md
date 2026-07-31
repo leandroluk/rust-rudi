@@ -101,24 +101,28 @@ A API programática do M1 (`register_singleton`, `bind_with`, `resolve`) funcion
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| MACRO-01 | P1: #[injectable] sync/infalível | Design | Pending |
-| MACRO-02 | P1: #[injectable] async/Result | Design | Pending |
-| MACRO-03 | P1: #[injectable] Port default = Self | Design | Pending |
-| MACRO-04 | P1: #[injectable(dyn Port)] | Design | Pending |
-| MACRO-05 | P1: #[injectable] validação compile-time | Design | Pending |
-| MACRO-06 | P1: bind::<Impl,Port>() via Injectable | Design | Pending |
-| MACRO-07 | P1: bind última-vence (reuso M1) | Design | Pending |
-| MACRO-08 | P1: #[inject] remove parâmetro #[container] | Design | Pending |
-| MACRO-09 | P1: #[inject] injeta container() no corpo | Design | Pending |
-| MACRO-10 | P1: #[inject] validação compile-time (0 ou 2+ #[container]) | Design | Pending |
-| MACRO-11 | P2: #[derive(Injectable)] campo a campo | Design | Pending |
-| MACRO-12 | P2: #[derive(Injectable)] propagação de erro | Design | Pending |
+| MACRO-01 | P1: #[injectable] sync/infalível | T13 | Verified |
+| MACRO-02 | P1: #[injectable] async/Result | T13 | Verified |
+| MACRO-03 | P1: #[injectable] Port default = Self | T13 | Verified |
+| MACRO-04 | P1: #[injectable(dyn Port)] | T13 | Verified |
+| MACRO-05 | P1: #[injectable] validação compile-time | T13 | Verified |
+| MACRO-06 | P1: bind::<Impl,Port>() via Injectable | T11 | Verified |
+| MACRO-07 | P1: bind última-vence (reuso M1) | T11 | Verified |
+| MACRO-08 | P1: #[inject] remove parâmetro #[container] | T14 | Verified |
+| MACRO-09 | P1: #[inject] injeta container() no corpo | T14 | Verified |
+| MACRO-10 | P1: #[inject] validação compile-time (0 ou 2+ #[container]) | T14 | Verified |
+| MACRO-11 | P2: #[derive(Injectable)] campo a campo | T15 | Verified |
+| MACRO-12 | P2: #[derive(Injectable)] propagação de erro | T15 | Verified |
 
 **ID format:** `MACRO-NN`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 12 total, 0 mapped to tasks, 12 unmapped ⚠️ (Design phase ainda não rodou)
+**Coverage:** 12 total, 12 mapped to tasks, 0 unmapped — 29 testes (unit+integration+compile-fail), example `metacode` rodando ponta a ponta.
+
+**Desvios documentados vs. METACODE.md (restrição de linguagem, não escolha):**
+1. `#[injectable]` decora o `impl` block inteiro, não a fn `build` isolada (proc-macro attribute não vê o escopo ao redor do item que decora).
+2. Construtores que resolvem do container são `async fn build`, não `fn build` síncrona (`resolve()` do core é sempre async, decisão fechada em M1).
 
 ---
 

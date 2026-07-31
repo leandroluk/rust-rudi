@@ -1,7 +1,7 @@
 # Roadmap
 
-**Current Milestone:** M2 — Macros
-**Status:** M1 Complete, M2 Planning
+**Current Milestone:** M3 — Testes isolados
+**Status:** M1 Complete, M2 Complete, M3 Planning
 
 ---
 
@@ -24,7 +24,7 @@
 
 **Bind de porta (trait objects)** - COMPLETE
 
-- `bind::<Impl, dyn Port>()` — registra Impl resolvível via `Arc<dyn Port>`
+- `bind_with::<Port>(builder)` — registra impl resolvível via `Arc<Port>`, builder explícito (sem macro)
 
 ---
 
@@ -35,9 +35,10 @@
 
 ### Features
 
-**`#[injectable]`** - PLANNED
-**`#[inject]`** - PLANNED (resolve tipo real do parâmetro, não token literal)
-**`#[derive(Injectable)]`** - PLANNED
+**`Injectable` trait + `Container::bind`/`register_singleton_injectable`** - COMPLETE
+**`#[injectable]`** - COMPLETE (decora `impl` block, não a fn — restrição de proc-macro, ver design.md)
+**`#[inject]`** - COMPLETE (marker attribute `#[container]`, robusto contra alias)
+**`#[derive(Injectable)]`** - COMPLETE
 
 ---
 

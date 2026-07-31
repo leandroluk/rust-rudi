@@ -1,7 +1,7 @@
 # DI Macros Tasks
 
 **Design**: `.specs/features/di-macros/design.md`
-**Status**: Draft
+**Status**: Done — T10-T16 implementados, 29 testes (unit+integration+compile-fail via trybuild) + example `metacode` rodando de ponta a ponta, gate full verde
 
 ---
 
