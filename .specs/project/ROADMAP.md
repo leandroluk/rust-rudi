@@ -1,7 +1,7 @@
 # Roadmap
 
-**Current Milestone:** M3 — Testes isolados
-**Status:** M1 Complete, M2 Complete, M3 Planning
+**Current Milestone:** v1 Complete
+**Status:** M1 Complete, M2 Complete, M3 Complete
 
 ---
 
@@ -48,7 +48,7 @@
 
 ### Features
 
-**`rudi::testing::with_container`** - PLANNED
+**`rudi::testing::with_container`** - COMPLETE
 
 ---
 
