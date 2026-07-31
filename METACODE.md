@@ -452,3 +452,117 @@ healthcheck::run().await.unwrap();
 - `bind_many::<Impl, dyn Port>()` **acumula** em vez de sobrescrever — cada chamada adiciona mais uma implementação à lista da porta.
 - `resolve_all::<Arc<dyn Port>>()` retorna todas as implementações acumuladas via `bind_many` pra aquela porta (vazio se nenhuma, não é erro — diferente de `resolve` normal, que erra em tipo não registrado).
 - `bind_many` e `bind` são independentes: a mesma `Impl` pode aparecer nos dois (uma porta "seleção única" e outra porta "grupo") sem conflito, como no exemplo acima (`DatabasePort` via `bind`, `PingablePort` via `bind_many`).
+
+
+> src/usecase/user_usecase.rs
+```rs
+pub struct UserRepo {}
+impl UserRepo {
+    pub fn new() -> Self { Self {} }
+    pub async fn get(&self, id: u64) -> Result<Option<User>, Error> { Ok(None) }
+}
+
+pub struct PostRepo {}
+impl PostRepo {
+    fn new() -> Self { Self {} }
+    fn list_by_user_id(&self, user_id: u64) -> Result<Vec<Post>, Error> { Ok(vec![]) }
+}
+
+pub struct Usecase {
+    user_repo: Arc<dyn UserPort>,
+    post_repo: Arc<dyn PostPort>,
+}
+
+// #[injectable] no impl block (não na fn — mesma restrição de sempre: emitir
+// `impl Injectable for Usecase` exige estar fora de qualquer bloco `impl`, e
+// atributo numa fn associada só pode virar outra fn associada, nunca um item
+// de módulo). Dentro, acha a fn-construtor pela FORMA (sem `self`, todo
+// parâmetro marcado) — Rust não tem conceito de "constructor", `new` aqui é
+// só um nome, podia ser qualquer outro.
+#[injectable]
+impl Usecase {
+    // fica 100% síncrona e intocada — testável direto (`Usecase::new(mock_a, mock_b)`),
+    // sem `.await` nenhum. O async fica todo escondido dentro do `Injectable::build`
+    // gerado, que resolve cada parâmetro marcado e só então chama `Self::new(...)`.
+    fn new(
+        #[inject] user_repo: Arc<dyn UserPort>,
+        #[inject] post_repo: Arc<dyn PostPort>,
+    ) -> Self { Self { user_repo, post_repo } }
+    pub async fn execute(&self) -> Result<(), Error> { Ok(()) }
+}
+```
+
+> src/usecase/healthcheck_usecase.rs
+```rs
+pub struct HealthcheckUsecase {
+    pingables: Vec<Arc<dyn PingablePort>>,
+}
+
+#[injectable]
+impl HealthcheckUsecase {
+    // #[inject_all]: mesma ideia do #[inject], mas resolve_all em vez de resolve —
+    // todo mundo que fez bind_many pra essa porta, não só 1. Continua síncrona.
+    fn new(
+        #[inject_all] pingables: Vec<Arc<dyn PingablePort>>,
+    ) -> Self { Self { pingables } }
+    pub async fn execute(&self) -> Result<(), Error> {
+        for p in &self.pingables {
+            p.ping().await?;
+        }
+        Ok(())
+    }
+}
+```
+
+### Regra de detecção do construtor (`#[injectable]`)
+
+Rust não tem "constructor" — a macro varre toda fn do `impl` sem `self`, classifica cada uma em 2 formas possíveis (manual: 1 param sem marker, tipo termina em `Container`; injetada: todo param marcado), e usa a fn se **exatamente 1** candidata sobrar. Nome não importa nunca.
+
+> ✅ válido — manual (nome não importa)
+```rs
+#[injectable]
+impl LoggerSlogAdapter {
+    // 1 param sem marker, tipo termina em `Container` → candidata "manual"
+    async fn build(c: &Container) -> Self { /* resolve manual dentro */ }
+}
+```
+
+> ✅ válido — injetada (nome não importa, podia ser `new`, `create`, `assemble`...)
+```rs
+#[injectable]
+impl Usecase {
+    // todo param marcado → candidata "injetada"
+    fn new(#[inject] a: Arc<PortA>, #[container] c: &Container) -> Self { /* ... */ }
+}
+```
+
+> ❌ erro compile-time — 0 candidatas (nenhuma fn bate em nenhuma forma)
+```rs
+#[injectable]
+impl Broken {
+    // 1 param, sem marker, mas NÃO é Container → não é "manual"
+    // e não é "injetada" (não tem NENHUM marker) → não é candidata nenhuma
+    fn new(x: u32) -> Self { Self }
+}
+```
+
+> ❌ erro compile-time — 2+ candidatas (ambíguo)
+```rs
+#[injectable]
+impl Broken {
+    async fn build(c: &Container) -> Self { /* candidata manual */ }
+    fn new(#[inject] a: Arc<PortA>) -> Self { /* candidata injetada — as 2 nunca podem coexistir */ }
+}
+```
+
+> ⚠️ não é candidata (nem erro isolado, nem sucesso) — mistura marcado/não-marcado
+```rs
+#[injectable]
+impl Broken {
+    // `a` marcado, `raw` não — não bate em NENHUMA das 2 formas (não é 100% marcada,
+    // não é o único-param-Container da forma manual) → ignorada silenciosamente.
+    // Se essa for a ÚNICA fn do impl, resultado final = erro "0 candidatas".
+    fn new(#[inject] a: Arc<PortA>, raw: u32) -> Self { Self }
+}
+```
+```
