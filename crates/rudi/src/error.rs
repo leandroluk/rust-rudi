@@ -15,7 +15,9 @@ pub enum RudiError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
-    #[error("registered value for {type_name} could not be downcast (bug in rudi or type collision)")]
+    #[error(
+        "registered value for {type_name} could not be downcast (bug in rudi or type collision)"
+    )]
     DowncastFailed { type_name: &'static str },
 }
 

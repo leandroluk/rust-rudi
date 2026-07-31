@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use rudi::Container;
 
@@ -46,7 +46,9 @@ async fn singleton_builder_runs_once_under_concurrency() {
     let mut handles = Vec::new();
     for _ in 0..10 {
         let c = c.clone();
-        handles.push(tokio::spawn(async move { c.resolve::<Counter>().await.unwrap() }));
+        handles.push(tokio::spawn(async move {
+            c.resolve::<Counter>().await.unwrap()
+        }));
     }
 
     for handle in handles {

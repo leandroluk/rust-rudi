@@ -78,7 +78,11 @@ impl Container {
     }
 
     /// Registra um valor já construído sob um nome, coexistindo com outras instâncias do mesmo tipo.
-    pub fn register_instance_named<T: Send + Sync + 'static>(&self, name: impl Into<String>, value: T) {
+    pub fn register_instance_named<T: Send + Sync + 'static>(
+        &self,
+        name: impl Into<String>,
+        value: T,
+    ) {
         let name = name.into();
         let key = Key::new(TypeId::of::<T>(), Some(&name));
         self.insert_entry(key, Entry::Instance(Arc::new(value)));
@@ -140,11 +144,17 @@ impl Container {
     }
 
     /// Resolve `T` registrado sob `name`.
-    pub async fn resolve_named<T: Send + Sync + 'static>(&self, name: &str) -> Result<Arc<T>, RudiError> {
+    pub async fn resolve_named<T: Send + Sync + 'static>(
+        &self,
+        name: &str,
+    ) -> Result<Arc<T>, RudiError> {
         self.resolve_inner::<T>(Some(name)).await
     }
 
-    async fn resolve_inner<T: Send + Sync + 'static>(&self, name: Option<&str>) -> Result<Arc<T>, RudiError> {
+    async fn resolve_inner<T: Send + Sync + 'static>(
+        &self,
+        name: Option<&str>,
+    ) -> Result<Arc<T>, RudiError> {
         let type_name = std::any::type_name::<T>();
         let any = self.resolve_any(TypeId::of::<T>(), name, type_name).await?;
         any.downcast::<T>()
