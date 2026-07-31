@@ -1,1 +1,3 @@
-// TODO: crate root — API pública será exposta aqui (T8)
+mod error;
+
+pub use error::RudiError;
