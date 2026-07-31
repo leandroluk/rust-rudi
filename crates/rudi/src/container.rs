@@ -138,6 +138,23 @@ impl Container {
         self.insert_entry(key, singleton_entry::<T, F, Fut, E>(builder));
     }
 
+    /// Registra `builder` como a implementação de `Port` (trait/porta), resolvível via
+    /// `resolve::<Arc<Port>>()`. Se chamado 2x pra mesma `Port`, a 2ª chamada vence
+    /// (mesma regra "último registro vence" de `register_instance`).
+    ///
+    /// `builder` já retorna `Arc<Port>` pronto (o call site faz a coerção
+    /// `Arc<Impl> as Arc<dyn Port>`, já que o container não tem como expressar
+    /// esse bound genericamente sem a macro `#[injectable]`/`bind` da M2).
+    pub fn bind_with<Port, F, Fut, E>(&self, builder: F)
+    where
+        Port: Send + Sync + 'static + ?Sized,
+        F: Fn(Container) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Arc<Port>, E>> + Send + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        self.register_singleton::<Arc<Port>, F, Fut, E>(builder);
+    }
+
     /// Resolve `T`, sem nome.
     pub async fn resolve<T: Send + Sync + 'static>(&self) -> Result<Arc<T>, RudiError> {
         self.resolve_inner::<T>(None).await
