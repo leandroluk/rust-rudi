@@ -1,6 +1,7 @@
 mod container;
 mod error;
 mod injectable;
+pub mod testing;
 
 pub use container::Container;
 pub use error::RudiError;
