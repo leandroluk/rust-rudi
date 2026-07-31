@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::OnceCell;
 
 use crate::error::RudiError;
+use crate::injectable::Injectable;
 
 pub(crate) type AnyArc = Arc<dyn Any + Send + Sync>;
 pub(crate) type BoxedFuture = Pin<Box<dyn Future<Output = Result<AnyArc, RudiError>> + Send>>;
@@ -153,6 +154,28 @@ impl Container {
         E: std::error::Error + Send + Sync + 'static,
     {
         self.register_singleton::<Arc<Port>, F, Fut, E>(builder);
+    }
+
+    /// Registra `T: Injectable<Port = T>` como singleton, usando o `build` gerado por
+    /// `#[injectable]`/`#[derive(Injectable)]` em vez de um closure manual.
+    pub fn register_singleton_injectable<T>(&self)
+    where
+        T: Injectable<Port = T>,
+    {
+        self.register_singleton::<T, _, _, T::Error>(T::build);
+    }
+
+    /// Registra `Impl: Injectable<Port = Port>` resolvível via `resolve::<Arc<Port>>()`.
+    /// Se chamado 2x pra mesma `Port`, a 2ª chamada vence (mesma regra de `bind_with`).
+    pub fn bind<Impl, Port>(&self)
+    where
+        Impl: Injectable<Port = Port>,
+        Port: Send + Sync + 'static + ?Sized,
+    {
+        self.register_singleton::<Arc<Port>, _, _, Impl::Error>(|c| async move {
+            let built = Arc::new(Impl::build(c).await?);
+            Ok(Impl::into_port(built))
+        });
     }
 
     /// Resolve `T`, sem nome.
