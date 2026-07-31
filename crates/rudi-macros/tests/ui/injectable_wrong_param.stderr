@@ -1,0 +1,5 @@
+error: parâmetro de `build` deve ser `&Container` ou `Container` (sem alias — ver documentação de #[injectable])
+ --> tests/ui/injectable_wrong_param.rs:7:17
+  |
+7 |     fn build(x: u32) -> Self {
+  |                 ^^^

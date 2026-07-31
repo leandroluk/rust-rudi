@@ -1,9 +1,12 @@
+mod injectable;
+
 use proc_macro::TokenStream;
 
-/// Ver `crates/rudi-macros/src/injectable.rs` — implementação real chega em T13.
+/// Gera `impl rudi::Injectable for Tipo` a partir de `impl Tipo { fn build(c: &Container) -> Self }`.
+/// Decora o bloco `impl` inteiro (não a fn) — ver design.md pra explicação da restrição.
 #[proc_macro_attribute]
-pub fn injectable(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
+pub fn injectable(attr: TokenStream, item: TokenStream) -> TokenStream {
+    injectable::expand(attr.into(), item.into()).into()
 }
 
 /// Ver `crates/rudi-macros/src/inject.rs` — implementação real chega em T14.

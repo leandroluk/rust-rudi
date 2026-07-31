@@ -1,0 +1,5 @@
+error: #[injectable] deve decorar `impl Tipo { ... }` sem trait (não `impl Trait for Tipo`)
+ --> tests/ui/injectable_impl_trait.rs:7:1
+  |
+7 | impl Foo for Bar {}
+  | ^^^^^^^^^^^^^^^^^^^

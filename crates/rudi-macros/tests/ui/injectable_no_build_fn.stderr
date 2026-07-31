@@ -1,0 +1,7 @@
+error: #[injectable] exige uma fn `build` dentro do impl
+ --> tests/ui/injectable_no_build_fn.rs:6:1
+  |
+6 | / impl NoBuild {
+7 | |     fn other() {}
+8 | | }
+  | |_^
