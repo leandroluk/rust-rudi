@@ -1,3 +1,4 @@
+mod inject;
 mod injectable;
 
 use proc_macro::TokenStream;
@@ -9,10 +10,11 @@ pub fn injectable(attr: TokenStream, item: TokenStream) -> TokenStream {
     injectable::expand(attr.into(), item.into()).into()
 }
 
-/// Ver `crates/rudi-macros/src/inject.rs` — implementação real chega em T14.
+/// Remove o parâmetro marcado `#[container]` da assinatura pública e injeta
+/// `rudi::container()` como 1ª statement do corpo.
 #[proc_macro_attribute]
 pub fn inject(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
+    inject::expand(item.into()).into()
 }
 
 /// Ver `crates/rudi-macros/src/derive_injectable.rs` — implementação real chega em T15.

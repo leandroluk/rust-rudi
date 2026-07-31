@@ -1,0 +1,13 @@
+error: #[inject] exige exatamente 1 parâmetro marcado #[container]
+ --> tests/ui/inject_no_marker.rs:4:1
+  |
+4 | fn no_marker(c: &Container) {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Container`
+ --> tests/ui/inject_no_marker.rs:1:20
+  |
+1 | use rudi::{inject, Container};
+  |                    ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
