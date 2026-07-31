@@ -84,6 +84,31 @@ impl Container {
         self.insert_entry(key, Entry::Instance(Arc::new(value)));
     }
 
+    /// Registra um builder que roda de novo a cada `resolve` (sem cache).
+    pub fn register_transient<T, F, Fut, E>(&self, builder: F)
+    where
+        T: Send + Sync + 'static,
+        F: Fn(Container) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<T, E>> + Send + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let key = Key::new(TypeId::of::<T>(), None);
+        self.insert_entry(key, Entry::Transient(wrap_builder::<T, F, Fut, E>(builder)));
+    }
+
+    /// Variante nomeada de [`Container::register_transient`].
+    pub fn register_transient_named<T, F, Fut, E>(&self, name: impl Into<String>, builder: F)
+    where
+        T: Send + Sync + 'static,
+        F: Fn(Container) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<T, E>> + Send + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let name = name.into();
+        let key = Key::new(TypeId::of::<T>(), Some(&name));
+        self.insert_entry(key, Entry::Transient(wrap_builder::<T, F, Fut, E>(builder)));
+    }
+
     /// Resolve `T`, sem nome.
     pub async fn resolve<T: Send + Sync + 'static>(&self) -> Result<Arc<T>, RudiError> {
         self.resolve_inner::<T>(None).await
@@ -147,6 +172,27 @@ impl Default for Container {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn wrap_builder<T, F, Fut, E>(builder: F) -> BoxedFactory
+where
+    T: Send + Sync + 'static,
+    F: Fn(Container) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<T, E>> + Send + 'static,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    let type_name = std::any::type_name::<T>();
+    Arc::new(move |c: Container| {
+        let fut = builder(c);
+        Box::pin(async move {
+            fut.await
+                .map(|value| Arc::new(value) as AnyArc)
+                .map_err(|source| RudiError::BuildFailed {
+                    type_name,
+                    source: Box::new(source),
+                })
+        }) as BoxedFuture
+    })
 }
 
 #[cfg(test)]
