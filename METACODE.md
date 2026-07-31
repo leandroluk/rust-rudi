@@ -371,3 +371,84 @@ async fn main() {
 - Múltiplas instâncias do **mesmo** provider (ex: postgres primary + postgres replica) — como nomear/resolver cada uma, já que `bind`/`resolve` são por tipo?
 - Testes isolados: container global compartilhado entre testes é problema — precisa de algo tipo `rudi::testing::with_container(|c| {...})` pra escopo local?
 - `#[inject]` detecta o parâmetro por token literal `&Container` (proc-macro não resolve tipo) — quebra se o consumidor importar com alias (`use rudi::Container as C`). Documentar como limitação ou resolver de outro jeito?
+- `bind`/`resolve` hoje são "1 impl por porta, última vence" — não dá pra pegar **todo mundo** que implementa uma porta de uma vez (padrão comum de healthcheck: "resolve todos que sabem pingar e pinga cada um"). Precisa de `bind_many`/`resolve_all` separados de `bind`/`resolve` (sem mudar a semântica "última vence" que já existe), ver exemplo abaixo.
+
+## Exemplo: healthcheck via multi-bind (`PingablePort`)
+
+Motivação: `LoggerSlogAdapter`, `DatabasePostgresAdapter` e `DatabaseMongodbAdapter` acima já têm (ou poderiam ter) uma forma de "estou saudável?". Um healthcheck quer resolver **todos** os adapters que implementam essa porta, não só o último bindado — diferente do `DatabasePort`/`LoggerPort`, onde só 1 impl concreta interessa por vez.
+
+> src/domain/port/pingable.rs
+```rs
+pub trait PingablePort: Send + Sync {
+    async fn ping(&self) -> Result<(), Error>;
+}
+```
+
+> src/domain/port/mod.rs (adição)
+```rs
+pub mod pingable;
+pub use pingable::PingablePort;
+```
+
+> src/infra/database/postgres/adapter.rs (adição — mesmo `impl`, porta extra)
+```rs
+impl PingablePort for DatabasePostgresAdapter {
+    async fn ping(&self) -> Result<(), Error> {
+        self.config.uri.len(); // sqlx::PgPool::ping()...
+        Ok(())
+    }
+}
+```
+
+> src/infra/database/postgres/mod.rs (`init` ganha 1 linha)
+```rs
+pub fn init(c: &Container) {
+    c.register_instance(DatabasePostgresConfig {
+        uri: std::env::var("DATABASE_POSTGRES_URI").unwrap(),
+    });
+    c.bind::<DatabasePostgresAdapter, dyn DatabasePort>();
+    // bind_many: não sobrescreve quem já registrou PingablePort antes — acumula.
+    c.bind_many::<DatabasePostgresAdapter, dyn PingablePort>();
+}
+```
+
+> src/infra/database/mongodb/mod.rs (`init` ganha 1 linha, mesmo padrão)
+```rs
+pub fn init(c: &Container) {
+    c.register_instance(DatabaseMongodbConfig {
+        uri: std::env::var("DATABASE_MONGODB_URI").unwrap(),
+    });
+    c.bind::<DatabaseMongodbAdapter, dyn DatabasePort>();
+    c.bind_many::<DatabaseMongodbAdapter, dyn PingablePort>();
+}
+```
+
+> src/infra/healthcheck.rs
+```rs
+use std::sync::Arc;
+use rudi::Container;
+use crate::domain::port::PingablePort;
+
+// #[inject]: sem argumento no call site, macro resolve rudi::container() sozinha.
+pub async fn run(#[container] c: &Container) -> Result<(), Error> {
+    // resolve_all: TODOS os bind_many registrados pra essa porta, não só o último.
+    let pingables = c.resolve_all::<Arc<dyn PingablePort>>().await?;
+    for p in pingables {
+        p.ping().await?;
+    }
+    Ok(())
+}
+```
+
+> src/main.rs (adição ao fluxo já existente)
+```rs
+// depois de infra::init(&c1) — só postgres bindou PingablePort nesse container,
+// já que só um DATABASE_PROVIDER roda por vez (mongodb não chega a inicializar).
+healthcheck::run().await.unwrap();
+```
+
+### Regra nova (`bind_many`/`resolve_all`)
+- `bind` continua "última vence" — semântica intocada, usada quando só 1 impl concreta pode existir por vez (seleção por env).
+- `bind_many::<Impl, dyn Port>()` **acumula** em vez de sobrescrever — cada chamada adiciona mais uma implementação à lista da porta.
+- `resolve_all::<Arc<dyn Port>>()` retorna todas as implementações acumuladas via `bind_many` pra aquela porta (vazio se nenhuma, não é erro — diferente de `resolve` normal, que erra em tipo não registrado).
+- `bind_many` e `bind` são independentes: a mesma `Impl` pode aparecer nos dois (uma porta "seleção única" e outra porta "grupo") sem conflito, como no exemplo acima (`DatabasePort` via `bind`, `PingablePort` via `bind_many`).
