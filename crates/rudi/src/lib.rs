@@ -5,6 +5,9 @@ mod injectable;
 pub use container::Container;
 pub use error::RudiError;
 pub use injectable::Injectable;
+// Trait `Injectable` (namespace de tipo) e `#[derive(Injectable)]` (namespace de macro)
+// coexistem sob o mesmo identificador — igual `Clone`/`#[derive(Clone)]` no std.
+pub use rudi_macros::{inject, injectable, Injectable};
 
 use std::sync::OnceLock;
 
