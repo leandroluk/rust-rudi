@@ -1,0 +1,17 @@
+error: #[injectable] ambíguo — 2 fns candidatas a construtor: build, other
+  --> tests/ui/injectable_ambiguous.rs:6:1
+   |
+ 6 | / impl Ambiguous {
+ 7 | |     fn build(#[container] _c: &Container) -> Self {
+ 8 | |         Ambiguous
+...  |
+14 | | }
+   | |_^
+
+warning: unused import: `Container`
+ --> tests/ui/injectable_ambiguous.rs:1:24
+  |
+1 | use rudi::{injectable, Container};
+  |                        ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

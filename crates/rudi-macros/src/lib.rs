@@ -1,11 +1,13 @@
 mod derive_injectable;
 mod inject;
 mod injectable;
+mod resolve_codegen;
 
 use proc_macro::TokenStream;
 
-/// Gera `impl rudi::Injectable for Tipo` a partir de `impl Tipo { fn build(c: &Container) -> Self }`.
-/// Decora o bloco `impl` inteiro (não a fn) — ver design.md pra explicação da restrição.
+/// Gera `impl rudi::Injectable for Tipo` a partir de um construtor sem `self` onde
+/// todo parâmetro é marcado `#[inject]`/`#[inject_all]`/`#[container]`. Decora o
+/// bloco `impl` inteiro (não a fn) — ver design.md pra explicação da restrição.
 #[proc_macro_attribute]
 pub fn injectable(attr: TokenStream, item: TokenStream) -> TokenStream {
     injectable::expand(attr.into(), item.into()).into()

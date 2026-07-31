@@ -1,5 +1,10 @@
-error: parâmetro de `build` deve ser `&Container` ou `Container` (sem alias — ver documentação de #[injectable])
- --> tests/ui/injectable_wrong_param.rs:7:17
-  |
-7 |     fn build(x: u32) -> Self {
-  |                 ^^^
+error: #[injectable] exige uma fn construtor: sem `self`, todo parâmetro marcado #[inject]/#[inject_all]/#[container]
+  --> tests/ui/injectable_wrong_param.rs:6:1
+   |
+ 6 | / impl WrongParam {
+ 7 | |     fn build(x: u32) -> Self {
+ 8 | |         let _ = x;
+ 9 | |         WrongParam
+10 | |     }
+11 | | }
+   | |_^

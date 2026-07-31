@@ -1,20 +1,19 @@
-use rudi::{injectable, Container};
+use std::sync::Arc;
+
+use rudi::injectable;
 
 use crate::domain::port::database::DatabaseError;
 use crate::domain::port::DatabasePort;
 use crate::infra::database::postgres::config::DatabasePostgresConfig;
 
 pub struct DatabasePostgresAdapter {
-    config: DatabasePostgresConfig,
+    config: Arc<DatabasePostgresConfig>,
 }
 
 #[injectable(dyn DatabasePort)]
 impl DatabasePostgresAdapter {
-    async fn build(c: &Container) -> Self {
-        let config = c.resolve::<DatabasePostgresConfig>().await.unwrap();
-        Self {
-            config: (*config).clone(),
-        }
+    fn build(#[inject] config: Arc<DatabasePostgresConfig>) -> Self {
+        Self { config }
     }
 }
 

@@ -1,4 +1,4 @@
-error: #[injectable] exige uma fn `build` dentro do impl
+error: #[injectable] exige uma fn construtor: sem `self`, todo parâmetro marcado #[inject]/#[inject_all]/#[container]
  --> tests/ui/injectable_no_build_fn.rs:6:1
   |
 6 | / impl NoBuild {

@@ -1,20 +1,19 @@
-use rudi::{injectable, Container};
+use std::sync::Arc;
+
+use rudi::injectable;
 
 use crate::domain::port::database::DatabaseError;
 use crate::domain::port::DatabasePort;
 use crate::infra::database::mongodb::config::DatabaseMongodbConfig;
 
 pub struct DatabaseMongodbAdapter {
-    config: DatabaseMongodbConfig,
+    config: Arc<DatabaseMongodbConfig>,
 }
 
 #[injectable(dyn DatabasePort)]
 impl DatabaseMongodbAdapter {
-    async fn build(c: &Container) -> Self {
-        let config = c.resolve::<DatabaseMongodbConfig>().await.unwrap();
-        Self {
-            config: (*config).clone(),
-        }
+    fn build(#[inject] config: Arc<DatabaseMongodbConfig>) -> Self {
+        Self { config }
     }
 }
 

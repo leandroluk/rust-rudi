@@ -1,0 +1,5 @@
+error: #[inject] parâmetro deve ser Arc<T> (resolve sempre retorna Arc<T>)
+ --> tests/ui/injectable_bad_inject_type.rs:7:27
+  |
+7 |     fn build(#[inject] x: u32) -> Self {
+  |                           ^^^

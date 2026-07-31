@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use rudi::{injectable, Container};
+use rudi::injectable;
 
 use crate::domain::port::LoggerPort;
 use crate::infra::logger::slog::config::LoggerSlogConfig;
@@ -8,20 +9,22 @@ use crate::infra::logger::slog::config::LoggerSlogConfig;
 pub struct LoggerSlogAdapter {
     level_map: HashMap<String, u8>,
     #[allow(dead_code)]
-    pub config: LoggerSlogConfig,
+    pub config: Arc<LoggerSlogConfig>,
 }
 
 // #[injectable]: marca o `impl` como gerador de `impl Injectable` pro tipo (usado por
 // `bind`/`register_singleton_injectable`). Vai no bloco `impl` inteiro, não na fn —
 // ver .specs/features/di-macros/design.md pra explicação da restrição de linguagem.
+//
+// #[inject] no parâmetro: resolve `LoggerSlogConfig` do container pelo próprio tipo,
+// sem chamada manual a `c.resolve()` — construtor fica síncrono, todo o async fica
+// escondido dentro do `Injectable::build` gerado (ver METACODE.md, regra de detecção
+// do construtor).
 #[injectable(dyn LoggerPort)]
 impl LoggerSlogAdapter {
-    // async (não sync como no METACODE.md) porque `resolve` do core é sempre async —
-    // ver .specs/features/core-container/context.md, decisão de design fechada na M1.
-    async fn build(c: &Container) -> Self {
-        let config = c.resolve::<LoggerSlogConfig>().await.unwrap();
+    fn build(#[inject] config: Arc<LoggerSlogConfig>) -> Self {
         Self {
-            config: (*config).clone(),
+            config,
             level_map: HashMap::from([
                 ("off".to_string(), 0),
                 ("info".to_string(), 1),

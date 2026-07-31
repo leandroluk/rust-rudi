@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rudi::Container;
+use rudi::{injectable, Container};
 
 #[derive(Debug)]
 struct LoggerCfg {
@@ -78,4 +78,39 @@ async fn derive_missing_field_propagates_not_found() {
     c.register_singleton_injectable::<MissingDep>();
     let err = c.resolve::<MissingDep>().await;
     assert!(err.is_err());
+}
+
+// Regressão: campo `Arc<dyn Trait>` nunca foi testado antes — `resolve::<dyn Trait>()`
+// não compila (T: Sized implícito), precisa resolver via `Arc<dyn Trait>` + achatar
+// o double-Arc resultante. Ver .specs/features/param-inject/spec.md.
+trait Port: Send + Sync {
+    fn label(&self) -> &'static str;
+}
+
+struct PortImpl;
+impl Port for PortImpl {
+    fn label(&self) -> &'static str {
+        "impl"
+    }
+}
+#[injectable(dyn Port)]
+impl PortImpl {
+    fn build(#[container] _c: &Container) -> Self {
+        PortImpl
+    }
+}
+
+#[derive(rudi::Injectable)]
+struct WithTraitObjectField {
+    port: Arc<dyn Port>,
+}
+
+#[tokio::test]
+async fn derive_trait_object_field_resolves() {
+    let c = Container::new();
+    c.bind::<PortImpl, dyn Port>();
+    c.register_singleton_injectable::<WithTraitObjectField>();
+
+    let resolved = c.resolve::<WithTraitObjectField>().await.unwrap();
+    assert_eq!(resolved.port.label(), "impl");
 }

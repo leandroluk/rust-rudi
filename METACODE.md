@@ -565,4 +565,3 @@ impl Broken {
     fn new(#[inject] a: Arc<PortA>, raw: u32) -> Self { Self }
 }
 ```
-```

@@ -1,6 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, Data, DeriveInput, Fields, GenericArgument, PathArguments, Type};
+use syn::{parse2, Data, DeriveInput, Fields};
+
+use crate::resolve_codegen::resolve_arc_expr;
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let input = match parse2::<DeriveInput>(input) {
@@ -14,33 +16,35 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
             .to_compile_error();
     };
 
+    let container_expr = quote!(c);
+
     let build_expr = match &data.fields {
         Fields::Named(fields) => {
             let mut assigns = Vec::new();
             for f in &fields.named {
                 let ident = f.ident.as_ref().unwrap();
-                let Some(inner) = arc_inner(&f.ty) else {
+                let Some(resolve_expr) = resolve_arc_expr(&f.ty, &container_expr) else {
                     return syn::Error::new_spanned(
                         &f.ty,
                         "campo de #[derive(Injectable)] deve ser Arc<T> (resolve sempre retorna Arc<T>)",
                     )
                     .to_compile_error();
                 };
-                assigns.push(quote! { #ident: c.resolve::<#inner>().await?, });
+                assigns.push(quote! { #ident: #resolve_expr, });
             }
             quote! { Self { #(#assigns)* } }
         }
         Fields::Unnamed(fields) => {
             let mut assigns = Vec::new();
             for f in &fields.unnamed {
-                let Some(inner) = arc_inner(&f.ty) else {
+                let Some(resolve_expr) = resolve_arc_expr(&f.ty, &container_expr) else {
                     return syn::Error::new_spanned(
                         &f.ty,
                         "campo de #[derive(Injectable)] deve ser Arc<T> (resolve sempre retorna Arc<T>)",
                     )
                     .to_compile_error();
                 };
-                assigns.push(quote! { c.resolve::<#inner>().await?, });
+                assigns.push(quote! { #resolve_expr, });
             }
             quote! { Self( #(#assigns)* ) }
         }
@@ -64,19 +68,4 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
             }
         }
     }
-}
-
-fn arc_inner(ty: &Type) -> Option<&Type> {
-    let Type::Path(p) = ty else { return None };
-    let seg = p.path.segments.last()?;
-    if seg.ident != "Arc" {
-        return None;
-    }
-    let PathArguments::AngleBracketed(args) = &seg.arguments else {
-        return None;
-    };
-    args.args.iter().find_map(|a| match a {
-        GenericArgument::Type(t) => Some(t),
-        _ => None,
-    })
 }
