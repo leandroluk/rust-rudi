@@ -1,8 +1,10 @@
 mod container;
 mod error;
+mod injectable;
 
 pub use container::Container;
 pub use error::RudiError;
+pub use injectable::Injectable;
 
 use std::sync::OnceLock;
 
