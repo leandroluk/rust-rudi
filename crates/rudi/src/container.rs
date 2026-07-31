@@ -109,6 +109,31 @@ impl Container {
         self.insert_entry(key, Entry::Transient(wrap_builder::<T, F, Fut, E>(builder)));
     }
 
+    /// Registra um builder cacheado — 1ª resolução executa, demais retornam a mesma instância.
+    pub fn register_singleton<T, F, Fut, E>(&self, builder: F)
+    where
+        T: Send + Sync + 'static,
+        F: Fn(Container) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<T, E>> + Send + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let key = Key::new(TypeId::of::<T>(), None);
+        self.insert_entry(key, singleton_entry::<T, F, Fut, E>(builder));
+    }
+
+    /// Variante nomeada de [`Container::register_singleton`].
+    pub fn register_singleton_named<T, F, Fut, E>(&self, name: impl Into<String>, builder: F)
+    where
+        T: Send + Sync + 'static,
+        F: Fn(Container) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<T, E>> + Send + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let name = name.into();
+        let key = Key::new(TypeId::of::<T>(), Some(&name));
+        self.insert_entry(key, singleton_entry::<T, F, Fut, E>(builder));
+    }
+
     /// Resolve `T`, sem nome.
     pub async fn resolve<T: Send + Sync + 'static>(&self) -> Result<Arc<T>, RudiError> {
         self.resolve_inner::<T>(None).await
@@ -171,6 +196,19 @@ impl Container {
 impl Default for Container {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn singleton_entry<T, F, Fut, E>(builder: F) -> Entry
+where
+    T: Send + Sync + 'static,
+    F: Fn(Container) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<T, E>> + Send + 'static,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    Entry::Singleton {
+        factory: wrap_builder::<T, F, Fut, E>(builder),
+        cell: Arc::new(OnceCell::new()),
     }
 }
 
