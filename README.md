@@ -2,10 +2,10 @@
 
 Type-safe dependency injection for Rust, with guaranteed async resolution and macros that eliminate manual wiring boilerplate.
 
-[![ci](https://github.com/leandroluk/rudi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leandroluk/rudi/actions/workflows/ci.yml)
-[![docs](https://github.com/leandroluk/rudi/actions/workflows/docs.yml/badge.svg?branch=main)](https://leandroluk.github.io/rudi)
+[![ci](https://github.com/leandroluk/rust-rudi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leandroluk/rust-rudi/actions/workflows/ci.yml)
+[![docs](https://github.com/leandroluk/rust-rudi/actions/workflows/docs.yml/badge.svg?branch=main)](https://leandroluk.github.io/rust-rudi)
 
-📚 **[Read the Documentation](https://leandroluk.github.io/rudi)**
+📚 **[Read the Documentation](https://leandroluk.github.io/rust-rudi)**
 
 ---
 

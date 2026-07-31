@@ -2,8 +2,8 @@
 
 Type-safe dependency injection for Rust, with guaranteed async resolution and macros that eliminate manual wiring boilerplate.
 
-[![ci](https://github.com/leandroluk/rudi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leandroluk/rudi/actions/workflows/ci.yml)
-[![GitHub](https://img.shields.io/badge/GitHub-leandroluk%2Frudi-181717?logo=github)](https://github.com/leandroluk/rudi)
+[![ci](https://github.com/leandroluk/rust-rudi/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leandroluk/rust-rudi/actions/workflows/ci.yml)
+[![GitHub](https://img.shields.io/badge/GitHub-leandroluk%2Frust--rudi-181717?logo=github)](https://github.com/leandroluk/rust-rudi)
 
 ## Why this exists
 
@@ -63,7 +63,7 @@ From here:
 - [Binding a port](guides/binding.md) — `bind`/`bind_with`, trait objects, "last bind wins"
 - [Macros](guides/macros.md) — `#[injectable]`, `#[inject]`, `#[derive(Injectable)]`
 - [Testing](guides/testing.md) — why never to touch the global container in a test, and `with_container`
-- [metacode walkthrough](examples/metacode.md) — the full example, reproducing [`METACODE.md`](https://github.com/leandroluk/rudi/blob/main/METACODE.md)'s original hypothesis with real macros end-to-end
+- [metacode walkthrough](examples/metacode.md) — the full example, reproducing [`METACODE.md`](https://github.com/leandroluk/rust-rudi/blob/main/METACODE.md)'s original hypothesis with real macros end-to-end
 
 ## Errors
 

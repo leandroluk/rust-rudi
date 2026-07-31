@@ -1,6 +1,6 @@
 # metacode walkthrough
 
-[`crates/rudi/examples/metacode/`](https://github.com/leandroluk/rudi/tree/main/crates/rudi/examples/metacode) reproduces the `domain`/`infra` tree described in [`METACODE.md`](https://github.com/leandroluk/rudi/blob/main/METACODE.md) — the original design hypothesis this whole library was built from — using every macro end-to-end:
+[`crates/rudi/examples/metacode/`](https://github.com/leandroluk/rust-rudi/tree/main/crates/rudi/examples/metacode) reproduces the `domain`/`infra` tree described in [`METACODE.md`](https://github.com/leandroluk/rust-rudi/blob/main/METACODE.md) — the original design hypothesis this whole library was built from — using every macro end-to-end:
 
 ```bash
 cargo run --example metacode -p rudi

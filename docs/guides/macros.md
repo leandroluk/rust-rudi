@@ -78,7 +78,7 @@ async fn setup(#[container] c: &C) {
 }
 ```
 
-That's the whole reason `#[inject]` uses a marker attribute instead of matching on the parameter's type name — `#[container]` doesn't care what the type is called, only that it's the one parameter meant to be injected. `#[injectable]`'s `build` parameter can't use this trick (see [design.md](https://github.com/leandroluk/rudi/blob/main/.specs/features/di-macros/design.md) for why the 2 macros ended up with different constraints here).
+That's the whole reason `#[inject]` uses a marker attribute instead of matching on the parameter's type name — `#[container]` doesn't care what the type is called, only that it's the one parameter meant to be injected. `#[injectable]`'s `build` parameter can't use this trick (see [design.md](https://github.com/leandroluk/rust-rudi/blob/main/.specs/features/di-macros/design.md) for why the 2 macros ended up with different constraints here).
 
 ### Compile-time validation
 

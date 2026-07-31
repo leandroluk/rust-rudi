@@ -72,4 +72,4 @@ for p in pingables {
 - Each accumulated implementation is cached individually (double-init safe under concurrency), the same guarantee `register_singleton`/`bind` give a single slot.
 - There's no `bind_many_named`/`resolve_all_named` yet — not needed by any concrete use case so far; add it if one shows up.
 
-See the full [`PingablePort` example](https://github.com/leandroluk/rudi/blob/main/METACODE.md#exemplo-healthcheck-via-multi-bind-pingableport) in `METACODE.md` for the complete wiring, healthcheck fn included.
+See the full [`PingablePort` example](https://github.com/leandroluk/rust-rudi/blob/main/METACODE.md#exemplo-healthcheck-via-multi-bind-pingableport) in `METACODE.md` for the complete wiring, healthcheck fn included.
