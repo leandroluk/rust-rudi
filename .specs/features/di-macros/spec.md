@@ -24,17 +24,17 @@ A API programática do M1 (`register_singleton`, `bind_with`, `resolve`) funcion
 
 ### P1: `#[injectable]` gera `impl Injectable` ⭐ MVP
 
-**User Story**: Como dev consumidor, quero anotar `fn build(c: &Container) -> Self` com `#[injectable]` e ganhar automaticamente a capacidade de registrar esse tipo via `bind`/`register_singleton_injectable`, sem escrever o closure builder manual do M1.
+**User Story**: Como dev consumidor, quero anotar o `impl Tipo { fn build(c: &Container) -> Self ... }` com `#[injectable]` e ganhar automaticamente a capacidade de registrar esse tipo via `bind`/`register_singleton_injectable`, sem escrever o closure builder manual do M1.
 
-**Why P1**: É o mecanismo central que faz os exemplos do METACODE.md (`LoggerSlogAdapter`, `DatabasePostgresAdapter`, `DatabaseMongodbAdapter`) funcionarem como escritos.
+**Why P1**: É o mecanismo central que faz os exemplos do METACODE.md (`LoggerSlogAdapter`, `DatabasePostgresAdapter`, `DatabaseMongodbAdapter`) funcionarem — com 1 ajuste de posicionamento do attribute (vai no `impl` block, não na fn — ver design.md, restrição de linguagem de proc-macros, não escolha arbitrária).
 
 **Acceptance Criteria**:
 
-1. WHEN `#[injectable]` decora `fn build(c: &Container) -> Self` (síncrona, infalível) THEN macro SHALL gerar `impl Injectable for Tipo` com `type Error = Infallible`, chamando a fn original internamente
-2. WHEN `#[injectable]` decora `async fn build(c: &Container) -> Result<Self, E>` THEN macro SHALL gerar `impl Injectable` repassando o `Result` como está, sem envolver em `Ok(...)` extra
+1. WHEN `#[injectable]` decora `impl Tipo { fn build(c: &Container) -> Self ... }` (síncrona, infalível) THEN macro SHALL gerar `impl Injectable for Tipo` com `type Error = Infallible`, chamando `Tipo::build` internamente
+2. WHEN `#[injectable]` decora `impl Tipo { async fn build(c: &Container) -> Result<Self, E> ... }` THEN macro SHALL gerar `impl Injectable` repassando o `Result` como está, sem envolver em `Ok(...)` extra
 3. WHEN `#[injectable]` é usado sem argumento THEN `type Port` gerado SHALL ser `Self` (resolução por tipo concreto, sem trait)
 4. WHEN `#[injectable(dyn PortTrait)]` é usado THEN `type Port` gerado SHALL ser `dyn PortTrait`, habilitando `c.bind::<Tipo, dyn PortTrait>()`
-5. WHEN a fn decorada não se chama `build` ou não tem exatamente 1 parâmetro do tipo `&Container`/`Container` THEN macro SHALL falhar em compile-time com mensagem clara (`compile_error!`)
+5. WHEN o `impl` decorado não tem uma fn chamada `build`, ou `build` não tem exatamente 1 parâmetro do tipo `&Container`/`Container` THEN macro SHALL falhar em compile-time com mensagem clara (`compile_error!`)
 
 **Independent Test**: aplicar `#[injectable]` num struct simples, chamar `Container::register_singleton_injectable::<Tipo>()`, resolver e comparar.
 

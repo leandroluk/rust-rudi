@@ -85,10 +85,20 @@ graph TD
 
 #### `#[injectable]` — algoritmo
 
-1. Parse do item como `syn::ImplItemFn` (dentro de `impl Tipo { ... }`) — se não for isso, `compile_error!`.
-2. Valida: nome da fn é `build`, exatamente 1 parâmetro do tipo cujo último segmento de path é `Container` (aqui SIM aceitamos "último segmento" — é o parâmetro de ENTRADA da própria fn que o consumidor escreveu deliberadamente como `&Container`/`Container`, diferente do caso `#[inject]` onde o parâmetro fica escondido; se o consumidor usar alias aqui, `#[injectable]` documenta que precisa ser `Container`/`&Container` explícito, sem alias — limitação aceitável porque o parâmetro é sempre visível e nomeado pelo próprio consumidor, ele decide o path que usa).
-3. Detecta via `syn`: `async` presente? Tipo de retorno é `Self` ou `Result<Self, E>`? (`syn::ReturnType` + match no último segmento do path do tipo).
-4. Gera `impl Injectable for Tipo` com `type Error = <E ou Infallible>` e `type Port = <Self ou dyn PortArg>` (conforme argumento do attribute), delegando pra fn original (mantida como método inerente, sem remover do `impl` original).
+**Correção de posicionamento (não é como o METACODE.md mostra literalmente):** proc-macro attribute só recebe o item exato em que é colocado — se posicionado direto na `fn build` dentro de `impl Tipo { ... }`, a macro não enxerga o `impl Tipo` ao redor e não tem como saber o nome concreto do tipo (limitação de linguagem, não de implementação: attribute macros não têm acesso a contexto de escopo). Solução: `#[injectable]` vai no **bloco `impl` inteiro**, não na fn — padrão usado por macros Rust reais (`#[async_trait]` e similares). METACODE.md mostra a posição errada pra essa restrição; a posição correta é 1 nível acima:
+
+```rust
+#[injectable] // <- aqui, não na fn
+impl LoggerSlogAdapter {
+    pub fn build(c: &Container) -> Self { ... }
+    fn dispatch(&self, ...) { ... } // outros métodos passam intactos
+}
+```
+
+1. Parse do item como `syn::ItemImpl` — se não for um `impl` de tipo nomeado (sem trait, `impl Tipo { ... }`), `compile_error!`.
+2. Dentro do impl, localiza a fn chamada `build` (via `syn::ImplItem::Fn`); exige exatamente 1 com esse nome e exatamente 1 parâmetro cujo último segmento de path é `Container` (aqui aceitamos "último segmento" — é o parâmetro de ENTRADA que o consumidor escreve deliberadamente, diferente do `#[inject]` onde o parâmetro fica escondido; alias nesse parâmetro específico não é suportado, documentado como limitação aceitável).
+3. Detecta via `syn`: `async` presente na fn `build`? Tipo de retorno é `Self` ou `Result<Self, E>`? (`syn::ReturnType` + match no último segmento do path do tipo).
+4. Gera, ao lado do `impl Tipo { ... }` original (preservado intacto, incluindo `build` e todos os outros métodos), um `impl Injectable for Tipo` com `type Error = <E ou Infallible>` e `type Port = <Self ou dyn PortArg>` (conforme argumento do attribute — `#[injectable]` ou `#[injectable(dyn PortArg)]`), delegando pra `Tipo::build` (chamada como método inerente).
 5. Gera `into_port`: se `Port = Self`, `fn into_port(built: Arc<Self>) -> Arc<Self> { built }`; se `Port = dyn X`, `fn into_port(built: Arc<Self>) -> Arc<dyn X> { built }` (coerção implícita, válida porque o bloco é concreto).
 
 #### `#[inject]` — algoritmo
