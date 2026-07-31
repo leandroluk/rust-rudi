@@ -1,7 +1,7 @@
 # Core Container Tasks
 
 **Design**: `.specs/features/core-container/design.md`
-**Status**: Draft
+**Status**: Done — T0-T9 implementados, 29 testes (unit+integration), gate full verde (test+clippy -D warnings+fmt --check)
 
 ---
 

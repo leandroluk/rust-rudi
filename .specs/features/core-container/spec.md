@@ -104,22 +104,24 @@ Projetos rust em padrão hexagonal (ports & adapters) fazem wiring manual: confi
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CORE-01 | P1: Registrar/resolver instância | Design | Pending |
-| CORE-02 | P1: Erro tipado em resolve sem registro | Design | Pending |
-| CORE-03 | P1: register_factory + resolve async | Design | Pending |
-| CORE-04 | P1: register_singleton com cache | Design | Pending |
-| CORE-05 | P1: propagação de erro do builder | Design | Pending |
-| CORE-06 | P1: bind porta / trait object | Design | Pending |
-| CORE-07 | P1: última bind vence | Design | Pending |
-| CORE-08 | P2: named register/resolve | Design | Pending |
-| CORE-09 | Edge: concorrência singleton sem double-init | Design | Pending |
-| CORE-10 | Edge: container vazio válido antes de qualquer register | Design | Pending |
+| CORE-01 | P1: Registrar/resolver instância | T3 | Verified |
+| CORE-02 | P1: Erro tipado em resolve sem registro | T3 | Verified |
+| CORE-03 | P1: register_factory + resolve async | T4 | Verified |
+| CORE-04 | P1: register_singleton com cache | T5 | Verified |
+| CORE-05 | P1: propagação de erro do builder | T4, T5 | Verified |
+| CORE-06 | P1: bind porta / trait object | T7 | Verified |
+| CORE-07 | P1: última bind vence | T7 | Verified |
+| CORE-08 | P2: named register/resolve | T3, T4, T5 | Verified |
+| CORE-09 | Edge: concorrência singleton sem double-init | T5 | Verified |
+| CORE-10 | Edge: container vazio válido antes de qualquer register | T3 | Verified |
 
 **ID format:** `CORE-NN`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 10 total, 0 mapped to tasks, 10 unmapped ⚠️ (Design phase ainda não rodou)
+**Coverage:** 10 total, 10 mapped to tasks, 0 unmapped — 29 testes (unit+integration), gate full verde.
+
+**Nota de implementação (CORE-06/07):** `resolve::<Arc<dyn Port>>()` retorna `Arc<Arc<dyn Port>>` (double-Arc), não `Arc<dyn Port>` puro — consequência de manter a regra "resolve::<T>() sempre Arc<T>" (context.md) uniforme mesmo quando `T` já é `Arc<dyn Port>`. Funciona de forma transparente via auto-deref (`.método()` funciona igual), validado em `tests/bind.rs` e `tests/metacode_scenario.rs`. Documentado aqui pra não ser confundido com bug.
 
 ---
 

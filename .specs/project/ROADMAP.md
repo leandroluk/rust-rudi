@@ -1,7 +1,7 @@
 # Roadmap
 
-**Current Milestone:** M1 — Core Container
-**Status:** Planning
+**Current Milestone:** M2 — Macros
+**Status:** M1 Complete, M2 Planning
 
 ---
 
@@ -12,17 +12,17 @@
 
 ### Features
 
-**Container global (`rudi::container()`)** - PLANNED
+**Container global (`rudi::container()`)** - COMPLETE
 
-- Singleton lazy 1-por-processo
-- `register_instance`, `register_factory`, `register_singleton`, `register_transient`
+- Singleton lazy 1-por-processo (`OnceLock`)
+- `register_instance`, `register_transient`, `register_singleton` (+ variantes `_named`)
 - `resolve::<T>()` async, com cache pra singleton e nova instância pra transient
 
-**Named bindings** - PLANNED
+**Named bindings** - COMPLETE
 
 - Variante nomeada de register/resolve pra múltiplas instâncias do mesmo tipo (ex: postgres primary/replica)
 
-**Bind de porta (trait objects)** - PLANNED
+**Bind de porta (trait objects)** - COMPLETE
 
 - `bind::<Impl, dyn Port>()` — registra Impl resolvível via `Arc<dyn Port>`
 
