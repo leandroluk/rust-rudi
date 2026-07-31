@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Módulo interno (`container.rs`, `error.rs` — lógica de Key/Entry/downcast) | unit (inline `#[cfg(test)] mod tests`) | Yes |
 | API pública do crate (fluxo register/resolve ponta a ponta) | integration (`tests/*.rs`) | Yes — cada teste usa seu próprio `Container::new()`, sem estado global compartilhado |
-| Macros (`rudi-macros`, futuro M2) | integration (`tests/` com `trybuild` ou expansão real) | Yes |
+| Macros (`rudi-macros`, M2) | integration (`tests/` com expansão real) + compile-fail (`trybuild`) pra casos de erro de uso | Yes |
 
 ## Gate Check Commands
 
