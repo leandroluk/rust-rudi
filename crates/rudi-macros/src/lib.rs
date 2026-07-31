@@ -1,3 +1,4 @@
+mod derive_injectable;
 mod inject;
 mod injectable;
 
@@ -17,8 +18,8 @@ pub fn inject(_attr: TokenStream, item: TokenStream) -> TokenStream {
     inject::expand(item.into()).into()
 }
 
-/// Ver `crates/rudi-macros/src/derive_injectable.rs` — implementação real chega em T15.
+/// Gera `impl rudi::Injectable for Tipo` resolvendo cada campo `Arc<T>` do container.
 #[proc_macro_derive(Injectable)]
-pub fn derive_injectable(_item: TokenStream) -> TokenStream {
-    TokenStream::new()
+pub fn derive_injectable(item: TokenStream) -> TokenStream {
+    derive_injectable::expand(item.into()).into()
 }

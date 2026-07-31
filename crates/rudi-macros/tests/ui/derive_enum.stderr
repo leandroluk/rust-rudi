@@ -1,0 +1,8 @@
+error: #[derive(Injectable)] só suporta struct
+ --> tests/ui/derive_enum.rs:2:1
+  |
+2 | / enum Bad {
+3 | |     A,
+4 | |     B,
+5 | | }
+  | |_^
