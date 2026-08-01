@@ -67,6 +67,9 @@ pub(crate) struct ManySlot {
     cell: Arc<OnceCell<AnyArc>>,
 }
 
+pub(crate) type ShutdownHook =
+    Arc<dyn Fn(Container) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
 // SPEC_DEVIATION: design.md especifica tokio::sync::RwLock; usamos std::sync::RwLock aqui.
 // Reason: a tabela de entradas só é acessada de forma síncrona (lookup/insert), nunca
 // segurada através de um .await — só o OnceCell do singleton precisa ser async-aware.
@@ -76,6 +79,7 @@ pub(crate) struct Inner {
     // Storage separado de `entries` — `bind_many` nunca sobrescreve/é sobrescrito por
     // `bind`/`bind_with` na mesma chave, mesmo pra Impls que aparecem nos dois.
     pub(crate) many: RwLock<HashMap<Key, Vec<ManySlot>>>,
+    pub(crate) shutdown_hooks: RwLock<Vec<ShutdownHook>>,
 }
 
 impl Inner {
@@ -83,6 +87,7 @@ impl Inner {
         Self {
             entries: RwLock::new(HashMap::new()),
             many: RwLock::new(HashMap::new()),
+            shutdown_hooks: RwLock::new(Vec::new()),
         }
     }
 }
@@ -262,6 +267,32 @@ impl Container {
             result.push(value);
         }
         Ok(result)
+    }
+
+    /// Registra um hook de shutdown — `Container::shutdown` roda todos os hooks
+    /// registrados em ordem **reversa** (LIFO), como destructors. Registro é manual:
+    /// o consumidor chama isso logo depois de montar o recurso (dentro do próprio
+    /// `init()`/builder), então ordem de registro casa com ordem de criação.
+    pub fn on_shutdown<F, Fut>(&self, hook: F)
+    where
+        F: Fn(Container) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let hook: ShutdownHook = Arc::new(move |c: Container| Box::pin(hook(c)));
+        self.inner.shutdown_hooks.write().unwrap().push(hook);
+    }
+
+    /// Roda todos os hooks registrados via [`Container::on_shutdown`], em ordem
+    /// reversa de registro, esperando cada um terminar antes do próximo (sequencial,
+    /// não concorrente — ordem importa).
+    pub async fn shutdown(&self) {
+        let hooks: Vec<ShutdownHook> = {
+            let mut hooks = self.inner.shutdown_hooks.write().unwrap();
+            std::mem::take(&mut *hooks)
+        };
+        for hook in hooks.into_iter().rev() {
+            (hook.as_ref())(self.clone()).await;
+        }
     }
 
     /// Resolve `T`, sem nome.
