@@ -20,6 +20,9 @@ Type-safe dependency injection for Rust, with guaranteed async resolution and ma
   - [Resolving](#resolving)
   - [Binding a port (trait object)](#binding-a-port-trait-object)
   - [Macros](#macros)
+  - [Optional dependencies](#optional-dependencies)
+  - [Shutdown hooks](#shutdown-hooks)
+  - [Debugging](#debugging)
   - [Testing](#testing)
 - [Known Limitations](#known-limitations)
 - [License](#license)
@@ -72,6 +75,10 @@ See [Documentation](#documentation) below for the full API (registration modes, 
 - [x] M3 — Isolated testing (`rudi::testing::with_container`)
 - [x] M4 — Multi-bind (`bind_many`/`resolve_all`, for healthcheck-style "resolve every implementation" ports)
 - [x] M5 — Constructor injection (`#[inject]`/`#[inject_all]` parameter markers inside `#[injectable]`)
+- [x] M6 — Circular dependency detection (`RudiError::CircularDependency` instead of a deadlock)
+- [x] M7 — Optional dependencies (`resolve_optional`, `Option<Arc<T>>` in `#[inject]`/`#[derive(Injectable)]`)
+- [x] M8 — Shutdown hooks (`on_shutdown`/`shutdown`, LIFO)
+- [x] M9 — Debug introspection (`debug_entries`/`debug_edges`)
 
 All v1 milestones are complete. See `.specs/project/ROADMAP.md` for the full breakdown.
 
@@ -84,7 +91,7 @@ All v1 milestones are complete. See `.specs/project/ROADMAP.md` for the full bre
 - **The library never reads `std::env`.** Reading environment variables is always the consumer's `init()` responsibility.
 - **Resolution is always async**, even for synchronous constructors — this guarantees builders that need I/O (opening a DB connection, etc.) are supported uniformly, without sync-over-async hacks.
 
-Out of scope for v1: FFI bindings for other languages, observability/tracing of the resolution graph, and compile-time circular-dependency detection (today it's a runtime deadlock — see [Known Limitations](#known-limitations)).
+Out of scope: FFI bindings for other languages, and compile-time circular-dependency detection (detected at runtime instead — see [Known Limitations](#known-limitations)).
 
 See `.specs/project/PROJECT.md` for the full vision/scope and `.specs/features/*/spec.md` for every feature's requirements and design decisions.
 
@@ -237,6 +244,52 @@ c.register_singleton_injectable::<Service>();
 let service = c.resolve::<Service>().await.unwrap();
 ```
 
+### Optional dependencies
+
+`resolve_optional::<T>()` converts an unregistered type into `Ok(None)` instead of `Err` — a build failure (`BuildFailed`) still propagates as `Err`, absence isn't the same as failure. `#[inject]` params and `#[derive(Injectable)]` fields both accept `Option<Arc<T>>` for the same effect, no manual `resolve_optional` call needed:
+
+```rust
+let maybe_metrics = c.resolve_optional::<MetricsCollector>().await?; // Ok(None) if unregistered
+
+#[injectable]
+impl Service {
+    fn build(#[inject] metrics: Option<Arc<MetricsCollector>>) -> Self {
+        Self { metrics }
+    }
+}
+```
+
+### Shutdown hooks
+
+Singletons holding an external resource (a connection pool, a socket) need a way to close it. `on_shutdown` registers a cleanup closure; `shutdown` runs every registered hook sequentially, in **reverse** registration order (LIFO, like destructors):
+
+```rust
+c.register_singleton::<DbPool, _, _, std::convert::Infallible>(|c| async move {
+    let pool = DbPool::connect().await;
+    c.on_shutdown(move |_c| {
+        let pool = pool.clone();
+        async move { pool.close().await; }
+    });
+    Ok(pool)
+});
+
+// later, on graceful shutdown:
+c.shutdown().await;
+```
+
+### Debugging
+
+`debug_entries()` lists everything currently registered (type, name, mode). `debug_edges()` reuses the resolution-chain tracking from circular-dependency detection to record parent→child edges as they're actually observed at runtime — not a static analysis of the whole graph, only what's been resolved so far:
+
+```rust
+for entry in c.debug_entries() {
+    println!("{:?} ({:?})", entry.type_name, entry.kind);
+}
+for (parent, child) in c.debug_edges() {
+    println!("{} depends on {}", parent.type_name, child.type_name);
+}
+```
+
 ### Testing
 
 Never use the global container (`rudi::container()`) in a test — it's shared by every test in the process. Use a local `Container::new()`, or the `with_container` helper:
@@ -259,7 +312,7 @@ async fn my_test() {
 
 ## Known Limitations
 
-- **Circular dependencies aren't detected** — a builder resolving a type whose own builder resolves it back becomes a runtime deadlock. Documented, not handled in v1.
+- **Circular dependencies are a runtime error, not a compile-time one** — detected on first resolve (`RudiError::CircularDependency`), not statically. There's no way to catch a cycle before actually running the code path that triggers it.
 - **`resolve::<Arc<dyn Port>>()` actually returns `Arc<Arc<dyn Port>>`** — a consequence of "resolve always returns `Arc<T>`" applied even when `T` is itself `Arc<dyn Port>` (from a `bind`/`bind_with` call). Transparent via auto-deref in practice (`resolved.info()` works the same); `#[inject]`/`#[inject_all]` inside `#[injectable]` and `#[derive(Injectable)]` all flatten it automatically, so this only matters if you call `resolve` directly on a bound port yourself.
 
 A full runnable example (logger + database with 2 providers, reproducing [`METACODE.md`](METACODE.md)'s hypothesis literally with real macros) lives at [`crates/rudi/examples/metacode/`](crates/rudi/examples/metacode/):

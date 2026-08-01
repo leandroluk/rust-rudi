@@ -1,7 +1,7 @@
 # Roadmap
 
-**Current Milestone:** v1 Complete (+ M4 pós-v1)
-**Status:** M1 Complete, M2 Complete, M3 Complete, M4 Complete
+**Current Milestone:** v1 Complete (+ M4-M9 pós-v1)
+**Status:** M1-M9 Complete
 
 ---
 
@@ -67,8 +67,57 @@
 
 ---
 
+## M6 — Circular Dependency Detection (pós-v1)
+
+**Goal:** Ciclo de dependência vira erro claro, não deadlock silencioso.
+
+### Features
+
+**Detecção via `tokio::task_local`** - COMPLETE
+
+- Pilha de resolução por cadeia lógica (async-safe sob runtime multi-thread — thread-local seria errado, task pode trocar de thread entre awaits)
+- `RudiError::CircularDependency { chain }` com a cadeia legível
+
+---
+
+## M7 — Optional Dependencies (pós-v1)
+
+**Goal:** Dependência que pode não existir (feature flag, plugin opcional) sem forçar erro.
+
+### Features
+
+**`resolve_optional` + `Option<Arc<T>>` em `#[inject]`/`#[derive(Injectable)]`** - COMPLETE
+
+- `NotFound` vira `Ok(None)`; `BuildFailed` continua propagando (ausência ≠ falha)
+
+---
+
+## M8 — Shutdown Hooks (pós-v1)
+
+**Goal:** Singleton com recurso externo (pool, socket) ganha um jeito de "desligar direito".
+
+### Features
+
+**`on_shutdown`/`shutdown`** - COMPLETE
+
+- Registro manual, execução em ordem reversa (LIFO), sequencial
+
+---
+
+## M9 — Debug Introspection (pós-v1)
+
+**Goal:** Debugar "por que isso não resolveu" sem adivinhação. Depende de M6.
+
+### Features
+
+**`debug_entries`/`debug_edges`** - COMPLETE
+
+- `debug_entries`: tudo registrado agora (tipo/nome/modo)
+- `debug_edges`: arestas pai→filho observadas em runtime (reusa a pilha do M6), não é análise estática do grafo completo
+
+---
+
 ## Future Considerations
 
 - Bindings FFI pra outras linguagens — fora de escopo v1
-- Observability/tracing de resolução (debug de grafo de deps)
-- Detecção de dependência circular em compile-time (hoje seria runtime panic)
+- Detecção de dependência circular em **compile-time** (hoje é runtime, M6) — exigiria análise estática do grafo de tipos, fora de escopo por ora

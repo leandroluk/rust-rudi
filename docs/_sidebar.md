@@ -9,6 +9,7 @@
   - [Resolving](guides/resolving.md)
   - [Binding a port](guides/binding.md)
   - [Macros](guides/macros.md)
+  - [Lifecycle & debugging](guides/lifecycle.md)
   - [Testing](guides/testing.md)
 
 - **Reference**

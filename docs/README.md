@@ -62,22 +62,24 @@ From here:
 - [Resolving](guides/resolving.md) — `resolve`/`resolve_named`, the `Arc<T>` contract, error handling
 - [Binding a port](guides/binding.md) — `bind`/`bind_with`, trait objects, "last bind wins"
 - [Macros](guides/macros.md) — `#[injectable]`, `#[inject]`, `#[derive(Injectable)]`
+- [Lifecycle & debugging](guides/lifecycle.md) — optional dependencies, shutdown hooks, circular dependency detection, `debug_entries`/`debug_edges`
 - [Testing](guides/testing.md) — why never to touch the global container in a test, and `with_container`
 - [metacode walkthrough](examples/metacode.md) — the full example, reproducing [`METACODE.md`](https://github.com/leandroluk/rust-rudi/blob/main/METACODE.md)'s original hypothesis with real macros end-to-end
 
 ## Errors
 
-`RudiError` (`thiserror`-derived enum, `crates/rudi/src/error.rs`) has 3 variants:
+`RudiError` (`thiserror`-derived enum, `crates/rudi/src/error.rs`) has 4 variants:
 
-- `NotFound { type_name, name }` — `resolve`/`resolve_named` on a type that was never registered under that name
+- `NotFound { type_name, name }` — `resolve`/`resolve_named` on a type that was never registered under that name. `resolve_optional` converts this specific variant into `Ok(None)` — see [Lifecycle & debugging](guides/lifecycle.md#optional-dependencies).
 - `BuildFailed { type_name, source }` — a `register_transient`/`register_singleton`/`bind` builder returned an `Err`
 - `DowncastFailed { type_name }` — internal defense; shouldn't occur in normal use (would indicate a bug in `rudi` itself)
+- `CircularDependency { chain }` — a builder (directly or transitively) tried to resolve a type already being resolved higher up the same chain. See [Lifecycle & debugging](guides/lifecycle.md#circular-dependencies).
 
 Always check with a `match`/`?`, never string-compare the error message.
 
 ## Known limitations
 
-- **Circular dependencies aren't detected.** A builder that (directly or transitively) resolves its own type again deadlocks at runtime, inside the `OnceCell` guarding the singleton's initialization. Not handled in v1 — avoid designing a dependency graph with cycles.
+- **Circular dependencies are a runtime error, not a compile-time one.** Detected on first resolve (`RudiError::CircularDependency`), not statically — there's no way to catch a cycle before actually running the code path that triggers it.
 - **`resolve::<Arc<dyn Port>>()` actually returns `Arc<Arc<dyn Port>>`.** A consequence of the "resolve always returns `Arc<T>`" rule applied uniformly even when `T` is itself `Arc<dyn Port>` (from a `bind`/`bind_with` call). Transparent in practice via Rust's auto-deref on method calls (`resolved.info()` works exactly the same), but worth knowing if you're storing the value or pattern-matching on its type.
 
 ## About the project
