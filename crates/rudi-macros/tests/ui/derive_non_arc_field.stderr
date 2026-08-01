@@ -1,4 +1,4 @@
-error: campo de #[derive(Injectable)] deve ser Arc<T> (resolve sempre retorna Arc<T>)
+error: campo de #[derive(Injectable)] deve ser Arc<T> ou Option<Arc<T>>
  --> tests/ui/derive_non_arc_field.rs:3:12
   |
 3 |     value: u32,

@@ -234,3 +234,35 @@ fn ctor_is_callable_manually_without_await() {
     let adapter = Adapter { config };
     assert_eq!(adapter.config.level, "manual");
 }
+
+struct OptionalDep {
+    config: Option<Arc<MyConfig>>,
+}
+
+#[injectable]
+impl OptionalDep {
+    fn build(#[inject] config: Option<Arc<MyConfig>>) -> Self {
+        Self { config }
+    }
+}
+
+#[tokio::test]
+async fn inject_optional_present() {
+    let c = Container::new();
+    c.register_instance(MyConfig {
+        level: "opt".into(),
+    });
+    c.register_singleton_injectable::<OptionalDep>();
+
+    let resolved = c.resolve::<OptionalDep>().await.unwrap();
+    assert_eq!(resolved.config.as_ref().unwrap().level, "opt");
+}
+
+#[tokio::test]
+async fn inject_optional_absent() {
+    let c = Container::new();
+    c.register_singleton_injectable::<OptionalDep>();
+
+    let resolved = c.resolve::<OptionalDep>().await.unwrap();
+    assert!(resolved.config.is_none());
+}

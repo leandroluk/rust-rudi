@@ -114,3 +114,29 @@ async fn derive_trait_object_field_resolves() {
     let resolved = c.resolve::<WithTraitObjectField>().await.unwrap();
     assert_eq!(resolved.port.label(), "impl");
 }
+
+#[derive(rudi::Injectable)]
+struct WithOptionalField {
+    logger: Option<Arc<LoggerCfg>>,
+}
+
+#[tokio::test]
+async fn derive_optional_field_present() {
+    let c = Container::new();
+    c.register_instance(LoggerCfg {
+        level: "opt".into(),
+    });
+    c.register_singleton_injectable::<WithOptionalField>();
+
+    let resolved = c.resolve::<WithOptionalField>().await.unwrap();
+    assert_eq!(resolved.logger.as_ref().unwrap().level, "opt");
+}
+
+#[tokio::test]
+async fn derive_optional_field_absent() {
+    let c = Container::new();
+    c.register_singleton_injectable::<WithOptionalField>();
+
+    let resolved = c.resolve::<WithOptionalField>().await.unwrap();
+    assert!(resolved.logger.is_none());
+}

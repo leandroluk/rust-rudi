@@ -277,6 +277,19 @@ impl Container {
         self.resolve_inner::<T>(Some(name)).await
     }
 
+    /// Como [`Container::resolve`], mas `T` não registrado vira `Ok(None)` em vez de
+    /// `Err`. Falha do builder (`BuildFailed`) continua propagando como `Err` —
+    /// "não registrado" é diferente de "registrado mas falhou ao construir".
+    pub async fn resolve_optional<T: Send + Sync + 'static>(
+        &self,
+    ) -> Result<Option<Arc<T>>, RudiError> {
+        match self.resolve::<T>().await {
+            Ok(value) => Ok(Some(value)),
+            Err(RudiError::NotFound { .. }) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     async fn resolve_inner<T: Send + Sync + 'static>(
         &self,
         name: Option<&str>,

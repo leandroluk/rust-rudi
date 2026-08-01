@@ -4,7 +4,7 @@ use syn::{
     parse2, Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, PathArguments, ReturnType, Type,
 };
 
-use crate::resolve_codegen::{resolve_all_vec_expr, resolve_arc_expr};
+use crate::resolve_codegen::{resolve_all_vec_expr, resolve_field_expr};
 
 enum Marker {
     Container,
@@ -202,10 +202,10 @@ fn expand_ctor(
                 }
             }
             Some(Marker::Inject) => {
-                let Some(expr) = resolve_arc_expr(ty, &container_expr) else {
+                let Some(expr) = resolve_field_expr(ty, &container_expr) else {
                     return syn::Error::new_spanned(
                         ty,
-                        "#[inject] parâmetro deve ser Arc<T> (resolve sempre retorna Arc<T>)",
+                        "#[inject] parâmetro deve ser Arc<T> ou Option<Arc<T>>",
                     )
                     .to_compile_error();
                 };

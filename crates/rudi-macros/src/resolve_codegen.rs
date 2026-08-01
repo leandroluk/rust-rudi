@@ -12,6 +12,11 @@ pub(crate) fn vec_inner(ty: &Type) -> Option<&Type> {
     path_generic_inner(ty, "Vec")
 }
 
+/// Peels `Option<Inner>` from `ty`, returning `Inner`. `None` if `ty` isn't `Option<...>`.
+pub(crate) fn option_inner(ty: &Type) -> Option<&Type> {
+    path_generic_inner(ty, "Option")
+}
+
 fn path_generic_inner<'a>(ty: &'a Type, wrapper: &str) -> Option<&'a Type> {
     let Type::Path(p) = ty else { return None };
     let seg = p.path.segments.last()?;
@@ -52,6 +57,38 @@ pub(crate) fn resolve_arc_expr(
     } else {
         quote! { #container_expr.resolve::<#inner>().await? }
     })
+}
+
+/// Generates the expression that resolves a field/param declared as `Option<Arc<Inner>>`,
+/// via `resolve_optional` — `None` (of the *dependency*, not a macro-expansion `None`)
+/// when `Inner` isn't registered, instead of an error. Same trait-object flattening
+/// as [`resolve_arc_expr`], applied inside the `Option::map`. Returns `Option::None`
+/// (Rust's own `Option`, not this fn's return) if `field_ty` isn't `Option<Arc<...>>`.
+pub(crate) fn resolve_optional_arc_expr(
+    field_ty: &Type,
+    container_expr: &TokenStream,
+) -> Option<TokenStream> {
+    let arc_ty = option_inner(field_ty)?;
+    let inner = arc_inner(arc_ty)?;
+    Some(if is_trait_object(inner) {
+        quote! {
+            #container_expr.resolve_optional::<#arc_ty>().await?
+                .map(|__resolved| (*__resolved).clone())
+        }
+    } else {
+        quote! { #container_expr.resolve_optional::<#inner>().await? }
+    })
+}
+
+/// Tries [`resolve_optional_arc_expr`] first (`Option<Arc<T>>` — optional dependency),
+/// falling back to [`resolve_arc_expr`] (`Arc<T>` — required). `None` if `field_ty`
+/// matches neither shape.
+pub(crate) fn resolve_field_expr(
+    field_ty: &Type,
+    container_expr: &TokenStream,
+) -> Option<TokenStream> {
+    resolve_optional_arc_expr(field_ty, container_expr)
+        .or_else(|| resolve_arc_expr(field_ty, container_expr))
 }
 
 /// Same idea as [`resolve_arc_expr`], for a field/param declared as `Vec<Arc<Inner>>`,

@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{parse2, Data, DeriveInput, Fields};
 
-use crate::resolve_codegen::resolve_arc_expr;
+use crate::resolve_codegen::resolve_field_expr;
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let input = match parse2::<DeriveInput>(input) {
@@ -23,10 +23,10 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
             let mut assigns = Vec::new();
             for f in &fields.named {
                 let ident = f.ident.as_ref().unwrap();
-                let Some(resolve_expr) = resolve_arc_expr(&f.ty, &container_expr) else {
+                let Some(resolve_expr) = resolve_field_expr(&f.ty, &container_expr) else {
                     return syn::Error::new_spanned(
                         &f.ty,
-                        "campo de #[derive(Injectable)] deve ser Arc<T> (resolve sempre retorna Arc<T>)",
+                        "campo de #[derive(Injectable)] deve ser Arc<T> ou Option<Arc<T>>",
                     )
                     .to_compile_error();
                 };
@@ -37,10 +37,10 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         Fields::Unnamed(fields) => {
             let mut assigns = Vec::new();
             for f in &fields.unnamed {
-                let Some(resolve_expr) = resolve_arc_expr(&f.ty, &container_expr) else {
+                let Some(resolve_expr) = resolve_field_expr(&f.ty, &container_expr) else {
                     return syn::Error::new_spanned(
                         &f.ty,
-                        "campo de #[derive(Injectable)] deve ser Arc<T> (resolve sempre retorna Arc<T>)",
+                        "campo de #[derive(Injectable)] deve ser Arc<T> ou Option<Arc<T>>",
                     )
                     .to_compile_error();
                 };
