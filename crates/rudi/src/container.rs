@@ -1,4 +1,5 @@
 use std::any::{Any, TypeId};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -8,6 +9,28 @@ use tokio::sync::OnceCell;
 
 use crate::error::RudiError;
 use crate::injectable::Injectable;
+
+// Pilha de resolução da cadeia lógica atual — escopo por `.await` aninhado, não por
+// thread (uma task pode trocar de thread entre awaits sob runtime multi-thread,
+// então thread-local daria falso negativo/positivo). Estabelecida uma única vez na
+// entrada "de fora" de `resolve_any`; chamadas recursivas (builder chamando
+// `c.resolve()` de novo) reusam o mesmo escopo via `try_with`.
+tokio::task_local! {
+    static RESOLUTION_STACK: RefCell<Vec<(TypeId, Option<Box<str>>, &'static str)>>;
+}
+
+struct StackPopGuard;
+
+impl Drop for StackPopGuard {
+    fn drop(&mut self) {
+        // Só falha se chamado fora de um escopo ativo, o que não deveria acontecer
+        // (o guard só existe enquanto resolve_any_checked, que já está dentro do
+        // escopo, está rodando) — `try_with` evita panic mesmo nesse caso hipotético.
+        let _ = RESOLUTION_STACK.try_with(|stack| {
+            stack.borrow_mut().pop();
+        });
+    }
+}
 
 pub(crate) type AnyArc = Arc<dyn Any + Send + Sync>;
 pub(crate) type BoxedFuture = Pin<Box<dyn Future<Output = Result<AnyArc, RudiError>> + Send>>;
@@ -270,11 +293,53 @@ impl Container {
         name: Option<&str>,
         type_name: &'static str,
     ) -> Result<AnyArc, RudiError> {
+        if RESOLUTION_STACK.try_with(|_| ()).is_ok() {
+            self.resolve_any_checked(type_id, name, type_name).await
+        } else {
+            RESOLUTION_STACK
+                .scope(
+                    RefCell::new(Vec::new()),
+                    self.resolve_any_checked(type_id, name, type_name),
+                )
+                .await
+        }
+    }
+
+    async fn resolve_any_checked(
+        &self,
+        type_id: TypeId,
+        name: Option<&str>,
+        type_name: &'static str,
+    ) -> Result<AnyArc, RudiError> {
         enum Action {
             Instance(AnyArc),
             Transient(BoxedFactory),
             Singleton(BoxedFactory, Arc<OnceCell<AnyArc>>),
         }
+
+        let name_owned = name.map(Box::from);
+
+        let cycle = RESOLUTION_STACK.with(|stack| {
+            let stack = stack.borrow();
+            if stack
+                .iter()
+                .any(|(t, n, _)| *t == type_id && *n == name_owned)
+            {
+                let mut chain: Vec<&'static str> = stack.iter().map(|(_, _, tn)| *tn).collect();
+                chain.push(type_name);
+                Some(chain)
+            } else {
+                None
+            }
+        });
+        if let Some(chain) = cycle {
+            return Err(RudiError::CircularDependency { chain });
+        }
+
+        RESOLUTION_STACK.with(|stack| {
+            stack.borrow_mut().push((type_id, name_owned, type_name));
+        });
+        let _guard = StackPopGuard;
 
         let key = Key::new(type_id, name);
 

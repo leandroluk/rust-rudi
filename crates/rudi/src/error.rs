@@ -19,6 +19,9 @@ pub enum RudiError {
         "registered value for {type_name} could not be downcast (bug in rudi or type collision)"
     )]
     DowncastFailed { type_name: &'static str },
+
+    #[error("circular dependency detected: {}", chain.join(" -> "))]
+    CircularDependency { chain: Vec<&'static str> },
 }
 
 #[cfg(test)]
@@ -68,5 +71,13 @@ mod tests {
             err.to_string(),
             "registered value for MyType could not be downcast (bug in rudi or type collision)"
         );
+    }
+
+    #[test]
+    fn circular_dependency_formats() {
+        let err = RudiError::CircularDependency {
+            chain: vec!["A", "B", "A"],
+        };
+        assert_eq!(err.to_string(), "circular dependency detected: A -> B -> A");
     }
 }
