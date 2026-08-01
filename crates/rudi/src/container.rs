@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 
 use tokio::sync::OnceCell;
 
+use crate::debug::{DebugEntry, DebugKind, DebugNode};
 use crate::error::RudiError;
 use crate::injectable::Injectable;
 
@@ -51,7 +52,12 @@ impl Key {
     }
 }
 
-pub(crate) enum Entry {
+pub(crate) struct Entry {
+    type_name: &'static str,
+    kind: EntryKind,
+}
+
+pub(crate) enum EntryKind {
     Instance(AnyArc),
     Transient(BoxedFactory),
     Singleton {
@@ -60,9 +66,10 @@ pub(crate) enum Entry {
     },
 }
 
-/// Slot de `bind_many` — mesma forma de `Entry::Singleton` (builder + cache), mas
+/// Slot de `bind_many` — mesma forma de `Entry`/`Singleton` (builder + cache), mas
 /// vive numa lista à parte (`Inner::many`), nunca sobrescrita por outro `bind_many`.
 pub(crate) struct ManySlot {
+    type_name: &'static str,
     factory: BoxedFactory,
     cell: Arc<OnceCell<AnyArc>>,
 }
@@ -80,6 +87,10 @@ pub(crate) struct Inner {
     // `bind`/`bind_with` na mesma chave, mesmo pra Impls que aparecem nos dois.
     pub(crate) many: RwLock<HashMap<Key, Vec<ManySlot>>>,
     pub(crate) shutdown_hooks: RwLock<Vec<ShutdownHook>>,
+    // Arestas pai→filho OBSERVADAS durante resoluções que já aconteceram — não é
+    // análise estática do grafo completo, só o que já foi visto em runtime. Ver
+    // Container::debug_edges.
+    pub(crate) observed_edges: RwLock<Vec<(DebugNode, DebugNode)>>,
 }
 
 impl Inner {
@@ -88,6 +99,7 @@ impl Inner {
             entries: RwLock::new(HashMap::new()),
             many: RwLock::new(HashMap::new()),
             shutdown_hooks: RwLock::new(Vec::new()),
+            observed_edges: RwLock::new(Vec::new()),
         }
     }
 }
@@ -106,15 +118,19 @@ impl Container {
         }
     }
 
-    fn insert_entry(&self, key: Key, entry: Entry) {
+    fn insert_entry(&self, key: Key, type_name: &'static str, kind: EntryKind) {
         let mut entries = self.inner.entries.write().unwrap();
-        entries.insert(key, entry);
+        entries.insert(key, Entry { type_name, kind });
     }
 
     /// Registra um valor já construído, resolvível sem nome.
     pub fn register_instance<T: Send + Sync + 'static>(&self, value: T) {
         let key = Key::new(TypeId::of::<T>(), None);
-        self.insert_entry(key, Entry::Instance(Arc::new(value)));
+        self.insert_entry(
+            key,
+            std::any::type_name::<T>(),
+            EntryKind::Instance(Arc::new(value)),
+        );
     }
 
     /// Registra um valor já construído sob um nome, coexistindo com outras instâncias do mesmo tipo.
@@ -125,7 +141,11 @@ impl Container {
     ) {
         let name = name.into();
         let key = Key::new(TypeId::of::<T>(), Some(&name));
-        self.insert_entry(key, Entry::Instance(Arc::new(value)));
+        self.insert_entry(
+            key,
+            std::any::type_name::<T>(),
+            EntryKind::Instance(Arc::new(value)),
+        );
     }
 
     /// Registra um builder que roda de novo a cada `resolve` (sem cache).
@@ -137,7 +157,11 @@ impl Container {
         E: std::error::Error + Send + Sync + 'static,
     {
         let key = Key::new(TypeId::of::<T>(), None);
-        self.insert_entry(key, Entry::Transient(wrap_builder::<T, F, Fut, E>(builder)));
+        self.insert_entry(
+            key,
+            std::any::type_name::<T>(),
+            EntryKind::Transient(wrap_builder::<T, F, Fut, E>(builder)),
+        );
     }
 
     /// Variante nomeada de [`Container::register_transient`].
@@ -150,7 +174,11 @@ impl Container {
     {
         let name = name.into();
         let key = Key::new(TypeId::of::<T>(), Some(&name));
-        self.insert_entry(key, Entry::Transient(wrap_builder::<T, F, Fut, E>(builder)));
+        self.insert_entry(
+            key,
+            std::any::type_name::<T>(),
+            EntryKind::Transient(wrap_builder::<T, F, Fut, E>(builder)),
+        );
     }
 
     /// Registra um builder cacheado — 1ª resolução executa, demais retornam a mesma instância.
@@ -162,7 +190,11 @@ impl Container {
         E: std::error::Error + Send + Sync + 'static,
     {
         let key = Key::new(TypeId::of::<T>(), None);
-        self.insert_entry(key, singleton_entry::<T, F, Fut, E>(builder));
+        self.insert_entry(
+            key,
+            std::any::type_name::<T>(),
+            singleton_kind::<T, F, Fut, E>(builder),
+        );
     }
 
     /// Variante nomeada de [`Container::register_singleton`].
@@ -175,7 +207,11 @@ impl Container {
     {
         let name = name.into();
         let key = Key::new(TypeId::of::<T>(), Some(&name));
-        self.insert_entry(key, singleton_entry::<T, F, Fut, E>(builder));
+        self.insert_entry(
+            key,
+            std::any::type_name::<T>(),
+            singleton_kind::<T, F, Fut, E>(builder),
+        );
     }
 
     /// Registra `builder` como a implementação de `Port` (trait/porta), resolvível via
@@ -232,6 +268,7 @@ impl Container {
         let key = Key::new(TypeId::of::<Arc<Port>>(), None);
         let mut many = self.inner.many.write().unwrap();
         many.entry(key).or_default().push(ManySlot {
+            type_name: std::any::type_name::<Arc<Port>>(),
             factory,
             cell: Arc::new(OnceCell::new()),
         });
@@ -267,6 +304,50 @@ impl Container {
             result.push(value);
         }
         Ok(result)
+    }
+
+    /// Lista tudo que está registrado no container agora — tipo, nome opcional, e
+    /// modo de registro. Inclui `entries` (instance/transient/singleton) e `many`
+    /// (`bind_many`, 1 `DebugEntry` por implementação acumulada).
+    pub fn debug_entries(&self) -> Vec<DebugEntry> {
+        let mut result = Vec::new();
+
+        {
+            let entries = self.inner.entries.read().unwrap();
+            for (key, entry) in entries.iter() {
+                let kind = match &entry.kind {
+                    EntryKind::Instance(_) => DebugKind::Instance,
+                    EntryKind::Transient(_) => DebugKind::Transient,
+                    EntryKind::Singleton { .. } => DebugKind::Singleton,
+                };
+                result.push(DebugEntry {
+                    type_name: entry.type_name,
+                    name: key.name.as_ref().map(|n| n.to_string()),
+                    kind,
+                });
+            }
+        }
+        {
+            let many = self.inner.many.read().unwrap();
+            for (key, slots) in many.iter() {
+                for slot in slots {
+                    result.push(DebugEntry {
+                        type_name: slot.type_name,
+                        name: key.name.as_ref().map(|n| n.to_string()),
+                        kind: DebugKind::Many,
+                    });
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Arestas pai→filho **observadas** durante resoluções que já aconteceram — não
+    /// é análise estática do grafo completo, só o que já foi visto em runtime.
+    /// Vazio se nenhuma resolução aninhada aconteceu ainda.
+    pub fn debug_edges(&self) -> Vec<(DebugNode, DebugNode)> {
+        self.inner.observed_edges.read().unwrap().clone()
     }
 
     /// Registra um hook de shutdown — `Container::shutdown` roda todos os hooks
@@ -380,6 +461,26 @@ impl Container {
             return Err(RudiError::CircularDependency { chain });
         }
 
+        // Aresta observada: se já tem alguém no topo da pilha, essa resolução é
+        // aninhada (builder do topo chamando resolve de novo) — registra pai→filho.
+        let parent = RESOLUTION_STACK.with(|stack| {
+            stack.borrow().last().map(|(_, n, tn)| DebugNode {
+                type_name: tn,
+                name: n.as_ref().map(|b| b.to_string()),
+            })
+        });
+        if let Some(parent) = parent {
+            let child = DebugNode {
+                type_name,
+                name: name.map(str::to_string),
+            };
+            let mut edges = self.inner.observed_edges.write().unwrap();
+            let pair = (parent, child);
+            if !edges.contains(&pair) {
+                edges.push(pair);
+            }
+        }
+
         RESOLUTION_STACK.with(|stack| {
             stack.borrow_mut().push((type_id, name_owned, type_name));
         });
@@ -390,11 +491,18 @@ impl Container {
         let action = {
             let entries = self.inner.entries.read().unwrap();
             match entries.get(&key) {
-                Some(Entry::Instance(value)) => Action::Instance(value.clone()),
-                Some(Entry::Transient(factory)) => Action::Transient(factory.clone()),
-                Some(Entry::Singleton { factory, cell }) => {
-                    Action::Singleton(factory.clone(), cell.clone())
-                }
+                Some(Entry {
+                    kind: EntryKind::Instance(value),
+                    ..
+                }) => Action::Instance(value.clone()),
+                Some(Entry {
+                    kind: EntryKind::Transient(factory),
+                    ..
+                }) => Action::Transient(factory.clone()),
+                Some(Entry {
+                    kind: EntryKind::Singleton { factory, cell },
+                    ..
+                }) => Action::Singleton(factory.clone(), cell.clone()),
                 None => {
                     return Err(RudiError::NotFound {
                         type_name,
@@ -421,14 +529,14 @@ impl Default for Container {
     }
 }
 
-fn singleton_entry<T, F, Fut, E>(builder: F) -> Entry
+fn singleton_kind<T, F, Fut, E>(builder: F) -> EntryKind
 where
     T: Send + Sync + 'static,
     F: Fn(Container) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<T, E>> + Send + 'static,
     E: std::error::Error + Send + Sync + 'static,
 {
-    Entry::Singleton {
+    EntryKind::Singleton {
         factory: wrap_builder::<T, F, Fut, E>(builder),
         cell: Arc::new(OnceCell::new()),
     }

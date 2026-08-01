@@ -1,9 +1,11 @@
 mod container;
+mod debug;
 mod error;
 mod injectable;
 pub mod testing;
 
 pub use container::Container;
+pub use debug::{DebugEntry, DebugKind, DebugNode};
 pub use error::RudiError;
 pub use injectable::Injectable;
 // Trait `Injectable` (namespace de tipo) e `#[derive(Injectable)]` (namespace de macro)
